@@ -32,5 +32,8 @@
     <ClInclude Include="ast.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="commondf.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
