@@ -26,13 +26,13 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="parser.h">
+    <ClInclude Include="Include\ast.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="ast.h">
+    <ClInclude Include="Include\commondf.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="commondf.h">
+    <ClInclude Include="Include\parser.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

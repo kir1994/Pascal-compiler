@@ -1,7 +1,7 @@
-#include "ast.h"
-#include "parser.h"
 #include <iostream>
 #include <fstream>
+
+#include "parser.h"
 
 int main(int argc, char **argv) {
   std::ifstream input;
