@@ -61,6 +61,12 @@ Token Lexer::GetToken()
 			return T_DO;
 		else if (_stringValue == "while")
 			return T_WHILE;
+		else if (_stringValue == "while")
+			return T_WHILE;
+		else if (_stringValue == "repeat")
+			return T_REPEAT;
+		else if (_stringValue == "until")
+			return T_UNTIL;
 	}
 	//Если строка
 	else if (_lastChar == '\'')
@@ -150,6 +156,12 @@ Token Lexer::GetToken()
 		_stringValue = _lastChar;
 		_lastChar = _input.get();
 		return T_COMMA;
+	}
+	else if (_lastChar == '~')
+	{
+		_stringValue = _lastChar;
+		_lastChar = _input.get();
+		return T_NEG;
 	}
 	else if (TERM_NAMES.find((_stringValue = _lastChar)) != TERM_NAMES.end())
 	{

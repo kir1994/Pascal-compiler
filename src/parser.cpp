@@ -106,7 +106,7 @@ Block * Parser::ParseBlock()
 		do
 		{
 			cnst = ParseConst();
-			if (!scp->Add(Const)(cnst->GetID(), cnst))
+			if (!scp->Add(cnst->GetID(), cnst))
 				throw exception();
 			MustBe(T_SEMICOLON);
 		} while (Is(T_ID));
@@ -130,7 +130,7 @@ Block * Parser::ParseBlock()
 				throw exception();
 			Var::TYPE type = Str2Type(GetCurrentValue());
 			for (auto& i : vars)
-				if(!scp->Add(Var)(i, new Var(i, type)))
+				if(!scp->Add(i, new Var(i, type)))
 					throw exception();
 			MustBe(T_SEMICOLON);
 		} while (Is(T_ID));
@@ -142,7 +142,7 @@ Block * Parser::ParseBlock()
 			Procedure *p = ParseProcedure();
 			//p->SetParentScope(scp);
 			p->_blk->SetParentScope(scp);
-			if(scp->Add(Procedure)(p->GetID(), p))
+			if(scp->Add(p->GetID(), p))
 				throw exception();
 		}
 		if (Is(T_FUNC))
@@ -150,7 +150,7 @@ Block * Parser::ParseBlock()
 			Function *f = ParseFunction();
 			//f->SetParentScope(scp);
 			f->_blk->SetParentScope(scp);
-			if(scp->Add(Function)(f->GetID(), f))
+			if(scp->Add(f->GetID(), f))
 				throw exception();
 		}
 	}
@@ -285,10 +285,39 @@ Statement * Parser::ParseStatement()
 	else if (Is(T_ID))
 	{
 		string var = GetCurrentValue();
-		MustBe(T_ASSIGN);
-
+		if (Is(T_ASSIGN))
+		{
+			NextToken();
+			Expression *expr = ParseExpression();
+			return new AssignStatement(var, expr);
+		}
+		else
+		{
+			vector<Expression *> params;
+			if (Is(T_LBR))
+			{
+				do
+				{
+					NextToken();
+					params.push_back(ParseExpression());
+				} while (Is(T_COMMA));
+				MustBe(T_RBR);
+			}
+			return new ProcCallStatement(var, params);
+		}
+	}
+	else if (Is(T_REPEAT))
+	{
+		StatementSeq *seq = new StatementSeq();
+		do
+		{
+			NextToken();
+			seq->AddStatement(ParseStatement());
+		} while (Is(T_SEMICOLON));
+		MustBe(T_UNTIL);
 		Expression *expr = ParseExpression();
-		return new AssignStatement(var, expr);
+
+		return new RepeatStatement(expr, seq);
 	}
 	throw exception();
 }
@@ -343,21 +372,31 @@ Expression * Parser::ParseTerm()
 Expression * Parser::ParseFactor()
 {
 	if (Is(T_ID))
-		return new ExprVar(GetCurrentValue());
+	{
+		string id = GetCurrentValue();
+		if (!Is(T_LBR))
+			return new ExprID(id);
+		vector<Expression *> vec;
+		do
+		{
+			NextToken();
+			vec.push_back(ParseExpression());
+		} while (Is(T_COMMA));
+		MustBe(T_RBR);
+
+		return new FuncCallExpr(id, vec);
+	}
 	else if (Is(T_STRING))
 		return new ExprConst(ExprConst::STRING, GetCurrentValue());
 	else if (Is(T_UNUMBER))
 		return new ExprConst(ExprConst::NUMBER, GetCurrentValue());
 	else if (Is(T_NIL))
 		return new ExprConst(ExprConst::NIL, GetCurrentValue());
-	else if (Is(T_TERMOP))
+	else if (Is(T_NEG))
 	{
-		char c = GetCurrentValue()[0];
-		if (c != '-' && c != '+')
-			throw exception();
+		NextToken();
 		Expression *ex = ParseFactor();
-		if (c == '-')
-			ex->Negate();
+		ex->Negate();
 		return ex;
 	}
 	else if (Is(T_LBR))
@@ -386,9 +425,10 @@ ParamList * Parser::ParseParamList()
 					pList->_params.push_back({ GetCurrentValue(), new ParamType() });
 				} while (Is(T_COMMA));
 			}
-			else if (Is(T_FUNC) || Is(T_VAR))
+			else if (Is(T_FUNC) || Is(T_VAR) || Is(T_ID))
 			{
 				bool isFunc = Is(T_FUNC);
+				bool byRef = Is(T_VAR);
 				vector<string> ids;
 				do
 				{
@@ -402,9 +442,9 @@ ParamList * Parser::ParseParamList()
 				for (auto& i : ids)
 				{
 					if (isFunc)
-						pList->_params.push_back({ i, new ParamType(type, type) });
-					else
 						pList->_params.push_back({ i, new ParamType(type) });
+					else
+						pList->_params.push_back({ i, new ParamType(type, (byRef) ? ParamType::REF : ParamType::VALUE) });
 				}
 			}
 			else

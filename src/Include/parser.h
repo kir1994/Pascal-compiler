@@ -34,12 +34,14 @@ enum Token {
   T_IF,
   T_THEN,
   T_ELSE,
-  // Операторы цикла For, While
+  // Операторы цикла
   T_FOR,
   T_TO,
   T_DOWNTO,
   T_DO,
   T_WHILE,
+  T_REPEAT,
+  T_UNTIL,
   //;
   T_SEMICOLON,
   //:
@@ -48,6 +50,8 @@ enum Token {
   T_COMMA,
   //:=
   T_ASSIGN,
+  //~
+  T_NEG,
   //(
   T_LBR,
   //)

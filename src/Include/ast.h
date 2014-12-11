@@ -9,51 +9,12 @@ class Expression;
 class Function;
 class Procedure;
 class Const;
-
-class Var
-{
-public:
-	enum TYPE { CHAR, REAL, INTEGER, BOOLEAN };
-private:
-	std::string _name;
-	TYPE _type;
-	std::string _realVal;
-
-	Expression *_val;
-
-	bool isSet;
-
-public:
-	Var(std::string name, TYPE type) : _name(name), isSet(false), _type(type) {	}
-
-	void Assign(Expression *val)
-	{
-		_val = val;
-		isSet = true;
-	}
-};
-
-
-class ParamType
-{
-	enum TYPE{ SIMPLE, FUNC, PROC };
-	ParamType::TYPE _type;
-	Var::TYPE _simple;
-	Var::TYPE _return_type;
-public:
-	ParamType(Var::TYPE type) : _type(SIMPLE), _simple(type) {}
-	ParamType() : _type(PROC) {}
-	ParamType(Var::TYPE type, Var::TYPE ret_type) : _type(FUNC), _simple(type), _return_type(ret_type) {}
-};
+class Node;
 
 class Scope
 {
 	Scope *pParScope;
-
-	std::map<std::string, Var *> VarScope;
-	std::map<std::string, Const *> ConstScope;
-	std::map<std::string, Function *> FunctionScope;
-	std::map<std::string, Procedure *> ProcedureScope;
+	std::map <std::string, Node *> scope;
 
 public:
 	Scope(Scope *parScope) : pParScope(parScope) {}
@@ -63,38 +24,38 @@ public:
 	{
 		pParScope = parScope;
 	}
-
-#define DeclareAddGet(x) bool Add##x##(std::string var,##x##*val)\
-	{\
-	if(##x##Scope.find(var) ==##x##Scope.end()){\
-	x##Scope[var]=val;\
-	return true;\
-	}\
-	else\
-	return false;\
-	};\
-	x##*##Get##x##(std::string var)\
-	{\
-	auto res = ##x##Scope.find(var);\
-	if (res != ##x##Scope.end())\
-	return res->second;\
-	else\
-	{\
-	if(pParScope == nullptr)\
-	return nullptr;\
-	else\
-	return pParScope->Get##x##(var);\
-	}\
+	bool Add(std::string var, Node* val)
+		{
+		if(scope.find(var) == scope.end()) {
+			scope[var]=val;
+			return true;
+		}
+		else
+			return false;
+		};
+	Node * Get(std::string var)
+	{
+		auto res =scope.find(var);
+		if (res != scope.end())
+			return res->second;
+		else
+		{
+			if(pParScope == nullptr)
+				return nullptr;
+			else
+				return pParScope->Get(var);
+		}
 	}
-	DeclareAddGet(Var);
-	DeclareAddGet(Const);
-	DeclareAddGet(Function);
-	DeclareAddGet(Procedure);
-	
-#define Add(x) Add##x
-#define Get(x) Get##x
-
-//#define DeclareGet(x) x##*##Get##x##(std::string var)\
+//#define DeclareAddGet(x) bool Add##x##(std::string var,##x##*val)\
+//	{\
+//	if(##x##Scope.find(var) ==##x##Scope.end()){\
+//	x##Scope[var]=val;\
+//	return true;\
+//	}\
+//	else\
+//	return false;\
+//	};\
+//	x##*##Get##x##(std::string var)\
 //	{\
 //	auto res = ##x##Scope.find(var);\
 //	if (res != ##x##Scope.end())\
@@ -107,14 +68,10 @@ public:
 //	return pParScope->Get##x##(var);\
 //	}\
 //	}
-//	DeclareAdd(Var);
-//	DeclareAdd(Const);
-//	DeclareAdd(Function);
-//	DeclareAdd(Procedure);
-//	DeclareGet(Var);
-//	DeclareGet(Const);
-//	DeclareGet(Function);
-//	DeclareGet(Procedure);
+//	DeclareAddGet(Var);
+//	DeclareAddGet(Const);
+//	DeclareAddGet(Function);
+//	DeclareAddGet(Procedure);
 };
 
 class Node
@@ -135,6 +92,50 @@ public:
 			throw std::exception();
 	}
 	Scope *getScope() { return _scp; }
+};
+
+class Var : public Node
+{
+public:
+	enum TYPE { CHAR, REAL, INTEGER, BOOLEAN };
+private:
+	std::string _name;
+	TYPE _type;
+	std::string _realVal;
+
+	Expression *_val;
+
+	bool isSet;
+
+public:
+	Var(std::string name, TYPE type) : _name(name), isSet(false), _type(type) {	}
+
+	void Assign(Expression *val)
+	{
+		_val = val;
+		isSet = true;
+	}
+	void Assign(const std::string& val)
+	{
+		_realVal = val;
+		isSet = true;
+	}
+};
+
+class ParamType
+{
+public:
+	enum TYPE{ SIMPLE, FUNC, PROC };
+	enum VAL_BY{ REF, VALUE };
+private:
+	ParamType::TYPE _type;
+	Var::TYPE _simple;
+	Var::TYPE _return_type;
+	VAL_BY _kind;
+public:
+	ParamType(Var::TYPE type, ParamType::VAL_BY k) : _type(SIMPLE), _simple(type), _kind(k) {}
+	ParamType() : _type(PROC) {}
+	ParamType(Var::TYPE type) : _type(FUNC), _return_type(type) {}
 };
 
 class Const : public Node {
@@ -163,7 +164,7 @@ public:
 class Expression
 {
 public:
-	enum TYPE{E_BINARY, E_COND, E_CONST, E_VAR};
+	enum TYPE{E_BINARY, E_COND, E_CONST, E_ID, E_FUNCCALL};
 	bool isNeg;
 	TYPE _type;
 
@@ -171,7 +172,13 @@ public:
 
 	void Negate() { isNeg = true; }
 };
+class FuncCallExpr : public Expression {
+public:
+	std::string _name;
+	std::vector<Expression *> _params;
 
+	FuncCallExpr(const std::string& s, const std::vector<Expression *>& par) : Expression(E_FUNCCALL), _name(s), _params(par) {}
+};
 class BinaryOp : public Expression {
 public:
 	enum OP { MUL, DIV, INT_DIV, MOD, AND, ADD, SUB, OR};
@@ -182,12 +189,12 @@ public:
 
 	BinaryOp(Expression *l, Expression *r, OP o) : Expression(E_BINARY), _left(l), _right(r), _op(o) {}
 };
-class ExprVar : public Expression {
+class ExprID : public Expression {
 public:
 
-	std::string varName;
+	std::string id;
 
-	ExprVar(const std::string& name) : Expression(E_VAR), varName(name) {}
+	ExprID(const std::string& name) : Expression(E_ID), id(name) {}
 };
 class ExprConst : public Expression {
 public:
@@ -210,7 +217,7 @@ public:
 
 class Statement : public Node {
 public:
-	enum TYPE{S_SEQ, S_IF, S_FOR, S_WHILE, S_ASSIGN, S_PROCCALL};
+	enum TYPE{S_SEQ, S_IF, S_FOR, S_WHILE, S_ASSIGN, S_PROCCALL, S_REPEAT};
 
 	TYPE _type;
 	Statement(TYPE type) : _type(type) {}
@@ -244,13 +251,6 @@ public:
 		delete _st;
 	}
 };
-class AssignStatement : public Statement {
-	std::string _var;
-	Expression *_expr;
-
-public:
-	AssignStatement(std::string var, Expression * expr) : Statement(S_ASSIGN), _var(var), _expr(expr) {}
-};
 class StatementSeq : public Statement
 {
 	std::vector<Statement *> statements;
@@ -260,6 +260,33 @@ public:
 	{
 		statements.push_back(st);
 	}
+};
+class RepeatStatement : public Statement {
+	Expression *_condition;
+
+	StatementSeq *_st;
+
+public:
+	RepeatStatement(Expression *cond, StatementSeq *st) : Statement(S_REPEAT), _condition(cond), _st(st) {}
+	virtual ~RepeatStatement()
+	{
+		delete _condition;
+		delete _st;
+	}
+};
+class AssignStatement : public Statement {
+	std::string _var;
+	Expression *_expr;
+
+public:
+	AssignStatement(const std::string& var, Expression * expr) : Statement(S_ASSIGN), _var(var), _expr(expr) {}
+};
+class ProcCallStatement : public Statement {
+	std::string _id;
+	std::vector<Expression *> _params;
+
+public:
+	ProcCallStatement(const std::string& var, const std::vector<Expression *> par) : Statement(S_PROCCALL), _id(var), _params(par) {}
 };
 class ForStatement : public Statement {
 

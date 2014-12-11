@@ -11,7 +11,7 @@ int main(int argc, char **argv) {
   if (P->IsSuccess())
 	  std::cout << "Success!\n";
   else
-	  std::cout << "Fail...:(\n";
+	  std::cout << "\nFail...:(\n";
 
   return 0;
 }
