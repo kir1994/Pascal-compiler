@@ -1,0 +1,5 @@
+*.sdf
+*.opensdf
+/src/Debug
+/src/Release
+/src/LLVM
