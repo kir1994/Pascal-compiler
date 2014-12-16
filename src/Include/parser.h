@@ -26,6 +26,8 @@ enum Token {
   T_PROC,
   T_BEGIN,
   T_END,
+  T_TRUE,
+  T_FALSE,
   // Различные операции
   T_FACTOROP,
   T_TERMOP,
@@ -67,7 +69,7 @@ static std::unordered_set<std::string> NAMES = {
 	"begin", "end", "with", "goto",
 	"const", "var", "array", "record", 
 	"set", "file", "function", "procedure", 
-	"label", "packed", "program",
+	"label", "packed", "program", "true", "false"
 	
 };
 static std::unordered_set<std::string> TYPE_NAMES = {
@@ -87,7 +89,7 @@ static std::unordered_set<std::string> TERM_NAMES = {
 };
 
 
-// Лексический анализатор.
+// Лексический анализатор
 class Lexer {
   std::istream &_input;
   int _lastChar;
@@ -100,10 +102,10 @@ public:
 
   ~Lexer() {}
 
-  // Получение очередной лексемы из потока.
+  // Получение очередной лексемы из потока
   Token GetToken();
   unsigned GetLine() { return _curLine; }
-  // Публично доступные атрибуты лексемы.
+
   std::string _IDName;
   std::string _stringValue;
 };
@@ -142,13 +144,13 @@ public:
 	Statement * ParseStatement();
 	StatementSeq * ParseStmntSeq();
 	Const * ParseConst();
-	Procedure * ParseProcedure();
+	Function * ParseProcedure();
 	Function * ParseFunction();
 	ParamList * ParseParamList();
-	Expression *ParseExpression();
-	Expression *ParseSimpleExpression();
-	Expression *ParseTerm();
-	Expression *ParseFactor();
+	Expression * ParseExpression();
+	Expression * ParseSimpleExpression();
+	Expression * ParseTerm();
+	Expression * ParseFactor();
 
 	bool _isValid;
 	bool IsSuccess() const { return _isValid; }

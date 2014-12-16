@@ -67,6 +67,10 @@ Token Lexer::GetToken()
 			return T_REPEAT;
 		else if (_stringValue == "until")
 			return T_UNTIL;
+		else if (_stringValue == "true")
+			return T_TRUE;
+		else if (_stringValue == "false")
+			return T_FALSE;
 	}
 	//Если строка
 	else if (_lastChar == '\'')

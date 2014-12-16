@@ -7,7 +7,6 @@
 class Block;
 class Expression;
 class Function;
-class Procedure;
 class Const;
 class Node;
 
@@ -25,14 +24,14 @@ public:
 		pParScope = parScope;
 	}
 	bool Add(std::string var, Node* val)
-		{
+	{
 		if(scope.find(var) == scope.end()) {
 			scope[var]=val;
 			return true;
 		}
 		else
 			return false;
-		};
+	};
 	Node * Get(std::string var)
 	{
 		auto res =scope.find(var);
@@ -46,32 +45,6 @@ public:
 				return pParScope->Get(var);
 		}
 	}
-//#define DeclareAddGet(x) bool Add##x##(std::string var,##x##*val)\
-//	{\
-//	if(##x##Scope.find(var) ==##x##Scope.end()){\
-//	x##Scope[var]=val;\
-//	return true;\
-//	}\
-//	else\
-//	return false;\
-//	};\
-//	x##*##Get##x##(std::string var)\
-//	{\
-//	auto res = ##x##Scope.find(var);\
-//	if (res != ##x##Scope.end())\
-//	return res->second;\
-//	else\
-//	{\
-//	if(pParScope == nullptr)\
-//	return nullptr;\
-//	else\
-//	return pParScope->Get##x##(var);\
-//	}\
-//	}
-//	DeclareAddGet(Var);
-//	DeclareAddGet(Const);
-//	DeclareAddGet(Function);
-//	DeclareAddGet(Procedure);
 };
 
 class Node
@@ -94,23 +67,40 @@ public:
 	Scope *getScope() { return _scp; }
 };
 
+//class Type
+//{
+//public:
+//	enum TYPE{T_SIMPLE};
+//
+//	TYPE _type;
+//
+//	Type(TYPE t) : _type(t) {}
+//};
+//class SimpleType : public Type
+//{
+//public:
+//	enum TYPE{T_CHAR, T_BOOLEAN, T_INTEGER, T_REAL};
+//	TYPE _type;
+//	SimpleType(TYPE t) : Type(T_SIMPLE), _type(t) {}
+//};
+
 class Var : public Node
 {
 public:
-	enum TYPE { CHAR, REAL, INTEGER, BOOLEAN };
+	enum TYPE { CHAR, REAL, INTEGER, BOOLEAN, VOID };
 private:
-	std::string _name;
+	//std::string _name;
 	TYPE _type;
-	std::string _realVal;
+	/*std::string _realVal;
 
-	Expression *_val;
+	Expression *_val;*/
 
 	bool isSet;
 
 public:
-	Var(std::string name, TYPE type) : _name(name), isSet(false), _type(type) {	}
-
-	void Assign(Expression *val)
+	Var(/*std::string name, */TYPE type) : /*_name(name), */isSet(false), _type(type) {	}
+	Var() :isSet(false), _type(VOID) {}
+	/*void Assign(Expression *val)
 	{
 		_val = val;
 		isSet = true;
@@ -119,41 +109,75 @@ public:
 	{
 		_realVal = val;
 		isSet = true;
-	}
+	}*/
 };
+class SimpleInteger : public Var
+{
+public:
+	int _val;
+	SimpleInteger(const int& i = 0) : Var(INTEGER), _val(i) {}
+};
+class SimpleReal : public Var
+{
+public:
+	double _val;
+	SimpleReal(const double& i = 0) : Var(REAL), _val(i) {}
+};
+class SimpleBoolean : public Var
+{
+public:
+	bool _val;
+	SimpleBoolean(const bool& i = false) : Var(BOOLEAN), _val(i) {}
+};
+class SimpleChar : public Var
+{
+public:
+	char _val;
+	SimpleChar(const char& i = 0) : Var(CHAR), _val(i) {}
+};
+
 
 class ParamType
 {
 public:
-	enum TYPE{ SIMPLE, FUNC, PROC };
-	enum VAL_BY{ REF, VALUE };
-private:
-	ParamType::TYPE _type;
-	Var::TYPE _simple;
-	Var::TYPE _return_type;
-	VAL_BY _kind;
-public:
-	ParamType(Var::TYPE type, ParamType::VAL_BY k) : _type(SIMPLE), _simple(type), _kind(k) {}
-	ParamType() : _type(PROC) {}
-	ParamType(Var::TYPE type) : _type(FUNC), _return_type(type) {}
+	enum TYPE {VAR, VAR_REF, FUNC};
+	TYPE _type;
+
+	Var::TYPE _rvtype;
+
+	ParamType(const TYPE& t) : _type(t) {}
+	ParamType(const TYPE& t, const Var::TYPE& rtype) : _type(t), _rvtype(rtype) {}
 };
 
 class Const : public Node {
 public:
-	enum TYPE { STRING, ID, NUMBER };
+	enum TYPE { STRING, ID, UREAL, UINT };
 private:
 	bool isNeg;
 	std::string _val;
-	std::string _ID;
 	TYPE _type;
 public:
-	Const() : isNeg(false), _val(""), _ID("") {}
+	Const() : isNeg(false), _val("") {}
+	Const(std::string val) : isNeg(false), _val(val), _type(STRING){}
+	Const(TYPE t, std::string val = "") : isNeg(false), _val(val), _type(t) {}
 	void SetNeg(bool neg) { isNeg = neg; }
 	void SetVal(std::string val) { _val = val; }
-	void SetID(std::string ID) { _ID = ID; }
 	void SetType(TYPE t) { _type = t; }
-	std::string GetID() { return _ID; }
 };
+
+class ConstInteger : public Const
+{
+public:
+	int _val;
+	ConstInteger(int i) : Const(UINT), _val(i) {}
+};
+class ConstReal : public Const
+{
+public:
+	double _val;
+	ConstReal(double i) : Const(UREAL), _val(i) {}
+};
+
 
 class ParamList : public Node {
 public:
@@ -199,10 +223,11 @@ public:
 class ExprConst : public Expression {
 public:
 	enum TYPE{STRING, NUMBER, NIL};
-	std::string _val;
+	//std::string _val;
+	Const *_val;
 	TYPE _type;
 
-	ExprConst(TYPE t, const std::string& val = "") : Expression(E_CONST), _val(val), _type(t) {}
+	ExprConst(TYPE t, Const *val = nullptr) : Expression(E_CONST), _val(val), _type(t) {}
 };
 class Condition : public Expression {
 public:
@@ -317,24 +342,18 @@ public:
 	StatementSeq * seq;
 };
 
-class Procedure : public Node {
-public:
-	std::string _ID;
-	ParamList *_params;
-	Block *_blk;
-
-	std::string GetID()
-	{
-		return _ID;
-	}
-};
 class Function : public Node {
 public:
 	std::string _ID;
 	ParamList *_params;
-
 	Block *_blk;
-	Var::TYPE _return_type;
+
+	Var::TYPE _rtype;
+
+	bool isProc;
+
+	Function(const std::string& id, ParamList *par, Block *blk, Var::TYPE rtype) : _ID(id), _params(par), _blk(blk), isProc(false), _rtype(rtype) {}
+	Function(const std::string& id, ParamList *par, Block *blk) : _ID(id), _params(par), _blk(blk), isProc(true) {}
 
 	std::string GetID()
 	{
