@@ -2,5 +2,5 @@ program prog;
 var 
 x : Boolean;
 begin
-x := true;
+x := true
 end

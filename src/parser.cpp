@@ -69,7 +69,7 @@ void Parser::Parse()
 			MustBe(T_SEMICOLON);
 		}
 
-		_ast->_blk = ParseBlock();
+		_ast->_blk = ParseBlock(nullptr);
 		_isValid = true;
 	}
 	catch (exception)
@@ -94,11 +94,10 @@ StatementSeq * Parser::ParseStmntSeq()
 	return seq;
 }
 
-Block * Parser::ParseBlock()
+Block * Parser::ParseBlock(Block *par)
 {
-	Block *blk = new Block();
-	Scope *scp = new Scope();
-
+	Block *blk = new Block;
+	blk->scp.SetParScope(&par->scp);
 	if (Is(T_CONST))
 	{
 		Const *cnst;
@@ -107,7 +106,7 @@ Block * Parser::ParseBlock()
 		{
 			string str = GetCurrentValue();
 			cnst = ParseConst();
-			if (!scp->Add(str, cnst))
+			if (!blk->add(str, cnst))
 				throw exception();
 			MustBe(T_SEMICOLON);
 		} while (Is(T_ID));
@@ -135,19 +134,19 @@ Block * Parser::ParseBlock()
 				switch (type)
 				{
 				case Var::BOOLEAN:
-					if (!scp->Add(i, new SimpleBoolean()))
+					if (!blk->add(i, new Var(Var::BOOLEAN)))
 						throw exception();
 					break;
 				case Var::INTEGER:
-					if (!scp->Add(i, new SimpleInteger()))
+					if (!blk->add(i, new Var(Var::INTEGER)))
 						throw exception();
 					break;
 				case Var::CHAR:
-					if (!scp->Add(i, new SimpleChar()))
+					if(!blk->add(i, new Var(Var::CHAR)))
 						throw exception();
 					break;
 				case Var::REAL:
-					if (!scp->Add(i, new SimpleReal()))
+					if (!blk->add(i, new Var(Var::REAL)))
 						throw exception();
 					break;
 				}
@@ -157,13 +156,11 @@ Block * Parser::ParseBlock()
 	}
 	while (Is(T_PROC) || Is(T_FUNC))
 	{
-		Function *f = (Is(T_PROC)) ? ParseProcedure() : ParseFunction();
-		f->_blk->SetParentScope(scp);
-		if (scp->Add(f->GetID(), f))
+		Function *f = (Is(T_PROC)) ? ParseProcedure(par) : ParseFunction(par);
+		if (!blk->add(f->GetID(), f))
 			throw exception();
 	}
 	blk->seq = ParseStmntSeq();
-	blk->SetScope(scp);
 	return blk;
 }
 
@@ -225,21 +222,16 @@ Const * Parser::ParseConst()
 	if (!Is(T_COND) || GetCurrentValue()[0] != '=')
 		throw exception();
 	if (Is(T_STRING))
-	{
-		cnst = new Const();
-		cnst->SetType(Const::STRING);
-		cnst->SetVal(GetCurrentValue());
-		return cnst;
-	}
+		return new ConstString(GetCurrentValue());
 	else if (Is(T_UNUMBER))
 		return ParseConstNumber(GetCurrentValue());
 	else if (Is(T_ID))
+		return new ConstID(GetCurrentValue());
+	else if (Is(T_FALSE) || Is(T_TRUE))
 	{
-		cnst = new Const();
-		cnst->SetType(Const::ID);
-		cnst->SetVal(GetCurrentValue());
-
-		return cnst;
+		bool b = Is(T_TRUE);
+		NextToken();
+		return new ConstBoolean(b);
 	}
 	else if (Is(T_TERMOP))
 	{
@@ -250,9 +242,8 @@ Const * Parser::ParseConst()
 			return ParseConstNumber(GetCurrentValue(), (c == '-'));
 		else if (Is(T_ID))
 		{
-			cnst = new Const();
-			cnst->SetType(Const::ID);
-			cnst->SetVal(GetCurrentValue());
+			cnst = new ConstID(GetCurrentValue());
+			cnst->SetNeg(c == '-');
 
 			return cnst;
 		}
@@ -263,7 +254,7 @@ Const * Parser::ParseConst()
 		throw exception();
 }
 
-Function * Parser::ParseFunction()
+Function * Parser::ParseFunction(Block *par)
 {
 	//Идентификатор
 	MustBe(T_ID);
@@ -275,13 +266,13 @@ Function * Parser::ParseFunction()
 	MustBe(T_VARTYPE);
 	Var::TYPE rtype = Str2Type(GetCurrentValue());
 	MustBe(T_SEMICOLON);
-	Block *blk = ParseBlock();
+	Block *blk = ParseBlock(par);
 	MustBe(T_SEMICOLON);
 
 	return new Function(id, pList, blk, rtype);
 }
 
-Function * Parser::ParseProcedure()
+Function * Parser::ParseProcedure(Block *par)
 {
 	//Идентификатор
 	MustBe(T_ID);
@@ -289,7 +280,7 @@ Function * Parser::ParseProcedure()
 	//Распознаем список параметров
 	ParamList* pList = ParseParamList();
 	MustBe(T_SEMICOLON);
-	Block *blk = ParseBlock();
+	Block *blk = ParseBlock(par);
 	MustBe(T_SEMICOLON);
 
 	return new Function(id, pList, blk);
@@ -451,11 +442,17 @@ Expression * Parser::ParseFactor()
 		return new FuncCallExpr(id, vec);
 	}
 	else if (Is(T_STRING))
-		return new ExprConst(ExprConst::STRING, new Const(GetCurrentValue()));
+		return new ExprConst(new ConstString(GetCurrentValue()));
 	else if (Is(T_UNUMBER))
-		return new ExprConst(ExprConst::NUMBER, ParseConstNumber(GetCurrentValue()));
-	else if (Is(T_NIL))
-		return new ExprConst(ExprConst::NIL);
+		return new ExprConst(ParseConstNumber(GetCurrentValue()));
+	/*else if (Is(T_NIL))
+		return new ExprConst(ExprConst::NIL);*/
+	else if (Is(T_FALSE) || Is(T_TRUE))
+	{
+		bool b = Is(T_TRUE);
+		NextToken();
+		return new ExprConst(new ConstBoolean(b));
+	}
 	else if (Is(T_NEG))
 	{
 		NextToken();

@@ -54,7 +54,7 @@ public:
 class Node
 {
 public:
-	virtual ~Node();
+	virtual ~Node() {}
 };
 
 class ScopableNode : public Node {
@@ -96,7 +96,7 @@ public:
 
 class Const : public ScopableNode {
 public:
-	enum TYPE { STRING, ID, UREAL, UINT };
+	enum TYPE { STRING, ID, UREAL, UINT, BOOL };
 
 	bool isNeg;
 	TYPE _type;
@@ -113,6 +113,13 @@ class ConstInteger : public Const
 public:
 	int _val;
 	ConstInteger(int i) : Const(UINT), _val(i) {}
+};
+
+class ConstBoolean : public Const
+{
+public:
+	bool _val;
+	ConstBoolean(bool i) : Const(BOOL), _val(i) {}
 };
 
 class ConstReal : public Const
@@ -187,6 +194,9 @@ public:
 		for (auto &i : _params)
 			delete i;
 	}
+	void CalculateVar() final {
+		throw std::exception("not supported yet");
+	}
 };
 
 class BinaryOp : public Expression {
@@ -230,6 +240,9 @@ public:
 	std::string id;
 
 	ExprID(const std::string& name) : Expression(E_ID), id(name) {}
+	void CalculateVar() final {
+		throw std::exception("not supported yet");
+	}
 };
 
 class ExprConst : public Expression {
@@ -442,7 +455,9 @@ public:
 
 	Scope scp;
 
-	void add(const std::string &name, ScopableNode *pNode) {
+	bool add(const std::string &name, ScopableNode *pNode) {
+		if (!scp.Add(name, pNode))
+			return false;
 		switch (pNode->_type) {
 		case ScopableNode::VAR:
 			Vars.push_back({ name, dynamic_cast<Var *>(pNode) });
@@ -454,8 +469,7 @@ public:
 			Funcs.push_back({ name, dynamic_cast<Function *>(pNode) });
 			break;
 		}
-
-		scp.Add(name, pNode);
+		return true;
 	}
 
 	StatementSeq * seq;
