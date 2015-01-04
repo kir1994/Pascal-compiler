@@ -114,6 +114,7 @@ public:
 // =====================================================================
 
 class Parser {
+public:
 	std::istream &_input;
 	Lexer *_lex;
 	Root *_ast;
