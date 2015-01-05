@@ -14,12 +14,27 @@ class ScopableNode;
 class Scope
 {
 public:
+	std::string name;
 	Scope *pParScope;
 
 	std::map <std::string, ScopableNode *> scope;
 
 	Scope(Scope *parScope) : pParScope(parScope) {}
-	Scope() : pParScope(nullptr) {}
+
+	Scope(const std::string &name) : name(name), pParScope(nullptr) {}
+
+	std::string GetScopeName() {
+		std::string res = "";
+
+		Scope *pCur = this;
+
+		while (pCur != nullptr) {
+			res = name + "::" + res;
+			pCur = pParScope;
+		}
+
+		return res;
+	}
 
 	void SetParScope(Scope *parScope)
 	{
@@ -59,7 +74,7 @@ public:
 
 class ScopableNode : public Node {
 public:
-	enum TYPE {VAR, CONST, FUNC};
+	enum TYPE {VAR, CONST, FUNC, PARAM};
 
 	TYPE _type;
 
@@ -80,18 +95,6 @@ public:
 	Var(TYPE type) : ScopableNode(ScopableNode::VAR), isSet(false), _type(type) {}
 
 	Var() : Var(VOID) {}
-};
-
-class ParamType
-{
-public:
-	enum TYPE {VAR, VAR_REF, FUNC};
-	TYPE _type;
-
-	Var::TYPE _rvtype;
-
-	ParamType(const TYPE& t) : _type(t) {}
-	ParamType(const TYPE& t, const Var::TYPE& rtype) : _type(t), _rvtype(rtype) {}
 };
 
 class Const : public ScopableNode {
@@ -145,8 +148,19 @@ public:
 	}
 };
 
+class ParamType : public ScopableNode
+{
+public:
+	enum TYPE { VAR, VAR_REF, FUNC };
+	TYPE _type;
 
-class ParamList : public Node {
+	Var::TYPE _rvtype;
+
+	ParamType(const TYPE& t) : ParamType(t, Var::VOID) {}
+	ParamType(const TYPE& t, const Var::TYPE& rtype) : ScopableNode(PARAM), _type(t), _rvtype(rtype) {}
+};
+
+class ParamList {
 public:
 	typedef std::pair<std::string, ParamType *> func_param;
 	std::vector<func_param> _params;
@@ -264,6 +278,10 @@ public:
 			break;
 		case Const::UREAL:
 			_pVar = new Var(Var::REAL);
+			break;
+		case Const::BOOL:
+			_pVar = new Var(Var::BOOLEAN);
+			break;
 		}
 	}
 
@@ -425,35 +443,18 @@ public:
 
 class Function : public ScopableNode {
 public:
-	std::string _ID;
-	ParamList *_params;
-	Block *_blk;
+	std::string _ID; // Имя функции
+	ParamList *_params; // Список параметров
 
-	Var::TYPE _rtype;
+	Var::TYPE _rtype; // Возращаемое значение (VOID для процедуры)
 
-	bool isProc;
+	Scope scp; // Текущая область видимости
 
-	Function(const std::string& id, ParamList *par, Block *blk, Var::TYPE rtype = Var::VOID) : ScopableNode(ScopableNode::FUNC), _ID(id), _params(par), _blk(blk), _rtype(rtype) {
-		if (rtype == Var::VOID)
-			isProc = true;
-		else isProc = false;
-	}
+	std::vector<std::pair<std::string, Const *>> Cons; // Объявления констант
+	std::vector<std::pair<std::string, Var *>> Vars; // Объявления переменных
+	std::vector<std::pair<std::string, Function *>> Funcs; // Объявления вложенных функций
 
-
-	std::string GetID()
-	{
-		return _ID;
-	}
-};
-
-class Block : public Node
-{
-public:
-	std::vector<std::pair<std::string, Const *>> Cons;
-	std::vector<std::pair<std::string, Var *>> Vars;
-	std::vector<std::pair<std::string, Function *>> Funcs;
-
-	Scope scp;
+	StatementSeq *seq; // Тело функции
 
 	bool add(const std::string &name, ScopableNode *pNode) {
 		if (!scp.Add(name, pNode))
@@ -472,9 +473,10 @@ public:
 		return true;
 	}
 
-	StatementSeq * seq;
+	Function(const std::string& id, ParamList *par, Var::TYPE rtype = Var::VOID) : ScopableNode(ScopableNode::FUNC),  scp(_ID), _ID(id), _params(par), _rtype(rtype) {
+	}
 
-	virtual ~Block() {
+	virtual ~Function() {
 		for (auto &i : Cons)
 			delete i.second;
 		for (auto &i : Vars)
@@ -484,15 +486,22 @@ public:
 
 		delete seq;
 	}
+
+
+	std::string GetID()
+	{
+		return _ID;
+	}
 };
 
-class Root : public Node
+class Root : public Function
 {
 public:
-	std::string progName;
-	Block *_blk;
+
+	Root() : Function("", nullptr) {
+	}
+
 	virtual ~Root()
 	{
-		delete _blk;
 	}
 };

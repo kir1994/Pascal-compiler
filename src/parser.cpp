@@ -65,7 +65,7 @@ void Parser::Parse()
 		if (Is(T_PROGRAM))
 		{
 			ShouldBe(T_ID);
-			_ast->progName = GetCurrentValue();
+			_ast->_ID = GetCurrentValue();
 			MustBe(T_SEMICOLON);
 		}
 
