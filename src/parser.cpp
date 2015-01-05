@@ -66,10 +66,12 @@ void Parser::Parse()
 		{
 			ShouldBe(T_ID);
 			_ast->_ID = GetCurrentValue();
+			_ast->scp.name = _ast->_ID;
 			MustBe(T_SEMICOLON);
 		}
 
-		_ast->_blk = ParseBlock(nullptr);
+		ParseDeclarations(_ast);
+		_ast->seq = ParseStmntSeq();
 		_isValid = true;
 	}
 	catch (exception)
@@ -94,10 +96,8 @@ StatementSeq * Parser::ParseStmntSeq()
 	return seq;
 }
 
-Block * Parser::ParseBlock(Block *par)
+void Parser::ParseDeclarations(Function *func)
 {
-	Block *blk = new Block;
-	blk->scp.SetParScope(&par->scp);
 	if (Is(T_CONST))
 	{
 		Const *cnst;
@@ -106,7 +106,7 @@ Block * Parser::ParseBlock(Block *par)
 		{
 			string str = GetCurrentValue();
 			cnst = ParseConst();
-			if (!blk->add(str, cnst))
+			if (!func->add(str, cnst))
 				throw exception();
 			MustBe(T_SEMICOLON);
 		} while (Is(T_ID));
@@ -134,19 +134,19 @@ Block * Parser::ParseBlock(Block *par)
 				switch (type)
 				{
 				case Var::BOOLEAN:
-					if (!blk->add(i, new Var(Var::BOOLEAN)))
+					if (!func->add(i, new Var(Var::BOOLEAN)))
 						throw exception();
 					break;
 				case Var::INTEGER:
-					if (!blk->add(i, new Var(Var::INTEGER)))
+					if (!func->add(i, new Var(Var::INTEGER)))
 						throw exception();
 					break;
 				case Var::CHAR:
-					if(!blk->add(i, new Var(Var::CHAR)))
+					if (!func->add(i, new Var(Var::CHAR)))
 						throw exception();
 					break;
 				case Var::REAL:
-					if (!blk->add(i, new Var(Var::REAL)))
+					if (!func->add(i, new Var(Var::REAL)))
 						throw exception();
 					break;
 				}
@@ -156,12 +156,10 @@ Block * Parser::ParseBlock(Block *par)
 	}
 	while (Is(T_PROC) || Is(T_FUNC))
 	{
-		Function *f = (Is(T_PROC)) ? ParseProcedure(par) : ParseFunction(par);
-		if (!blk->add(f->GetID(), f))
+		Function *f = ParseFunction(func, Is(T_FUNC));
+		if (!func->add(f->GetID(), f))
 			throw exception();
 	}
-	blk->seq = ParseStmntSeq();
-	return blk;
 }
 
 Const *ParseConstNumber(const string& val, bool neg = false)
@@ -254,36 +252,28 @@ Const * Parser::ParseConst()
 		throw exception();
 }
 
-Function * Parser::ParseFunction(Block *par)
+Function * Parser::ParseFunction(Function *par, bool isFunc)
 {
 	//Идентификатор
 	MustBe(T_ID);
 	string id = GetCurrentValue();
 	//Распознаем список параметров
 	ParamList* pList = ParseParamList();
-	// Возвращаемый тип
-	MustBe(T_COLON);
-	MustBe(T_VARTYPE);
-	Var::TYPE rtype = Str2Type(GetCurrentValue());
+	Var::TYPE rtype = Var::VOID;
+	if (isFunc)
+	{
+		// Возвращаемый тип
+		MustBe(T_COLON);
+		MustBe(T_VARTYPE);
+		Var::TYPE rtype = Str2Type(GetCurrentValue());
+	}
 	MustBe(T_SEMICOLON);
-	Block *blk = ParseBlock(par);
+	Function *pFunc = new Function(id, pList, rtype);
+	pFunc->scp.SetParScope(&par->scp);
+	ParseDeclarations(pFunc);
+	pFunc->seq = ParseStmntSeq();
 	MustBe(T_SEMICOLON);
-
-	return new Function(id, pList, blk, rtype);
-}
-
-Function * Parser::ParseProcedure(Block *par)
-{
-	//Идентификатор
-	MustBe(T_ID);
-	string id = GetCurrentValue();
-	//Распознаем список параметров
-	ParamList* pList = ParseParamList();
-	MustBe(T_SEMICOLON);
-	Block *blk = ParseBlock(par);
-	MustBe(T_SEMICOLON);
-
-	return new Function(id, pList, blk);
+	return pFunc;
 }
 
 Statement * Parser::ParseStatement()

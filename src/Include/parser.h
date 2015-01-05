@@ -141,12 +141,11 @@ public:
 		return res;
 	}
 
-	Block* ParseBlock(Block *par);
+	void ParseDeclarations(Function *func);
 	Statement * ParseStatement();
 	StatementSeq * ParseStmntSeq();
 	Const * ParseConst();
-	Function * ParseProcedure(Block *par);
-	Function * ParseFunction(Block *par);
+	Function * ParseFunction(Function *par, bool isFunc);
 	ParamList * ParseParamList();
 	Expression * ParseExpression();
 	Expression * ParseSimpleExpression();

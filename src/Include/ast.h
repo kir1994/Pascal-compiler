@@ -4,7 +4,6 @@
 #include <string>
 #include <map>
 
-class Block;
 class Expression;
 class Function;
 class Const;
@@ -18,8 +17,6 @@ public:
 	Scope *pParScope;
 
 	std::map <std::string, ScopableNode *> scope;
-
-	Scope(Scope *parScope) : pParScope(parScope) {}
 
 	Scope(const std::string &name) : name(name), pParScope(nullptr) {}
 
