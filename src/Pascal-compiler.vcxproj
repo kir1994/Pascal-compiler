@@ -85,12 +85,14 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="codegen.cpp" />
     <ClCompile Include="lexer.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="parser.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Include\ast.h" />
+    <ClInclude Include="Include\codegen.h" />
     <ClInclude Include="Include\commondf.h" />
     <ClInclude Include="Include\parser.h" />
   </ItemGroup>

@@ -67,6 +67,7 @@ void Parser::Parse()
 			ShouldBe(T_ID);
 			_ast->_ID = GetCurrentValue();
 			_ast->scp.name = _ast->_ID;
+			_ast->scp.Add(_ast->_ID, _ast->_prtype);
 			MustBe(T_SEMICOLON);
 		}
 
@@ -215,16 +216,17 @@ Const *ParseConstNumber(const string& val, bool neg = false)
 
 Const * Parser::ParseConst()
 {
-	Const *cnst;
 
 	if (!Is(T_COND) || GetCurrentValue()[0] != '=')
 		throw exception();
-	if (Is(T_STRING))
-		return new ConstString(GetCurrentValue());
+	//if (Is(T_STRING))
+	//	return new ConstString(GetCurrentValue());
 	else if (Is(T_UNUMBER))
 		return ParseConstNumber(GetCurrentValue());
-	else if (Is(T_ID))
-		return new ConstID(GetCurrentValue());
+	//else if (Is(T_ID)) {
+	//	std::string val = GetCurrentValue();
+	//	return new ConstID(GetCurrentValue());
+	//}
 	else if (Is(T_FALSE) || Is(T_TRUE))
 	{
 		bool b = Is(T_TRUE);
@@ -238,13 +240,14 @@ Const * Parser::ParseConst()
 			throw exception();
 		if (Is(T_UNUMBER))
 			return ParseConstNumber(GetCurrentValue(), (c == '-'));
-		else if (Is(T_ID))
+		/*else if (Is(T_ID))
 		{
+			Const *cnst;
 			cnst = new ConstID(GetCurrentValue());
 			cnst->SetNeg(c == '-');
 
 			return cnst;
-		}
+		}*/
 		else
 			throw exception();
 	}
@@ -255,22 +258,27 @@ Const * Parser::ParseConst()
 Function * Parser::ParseFunction(Function *par, bool isFunc)
 {
 	//Идентификатор
-	MustBe(T_ID);
+	ShouldBe(T_ID);
 	string id = GetCurrentValue();
 	//Распознаем список параметров
 	ParamList* pList = ParseParamList();
+	for (auto &i : pList->_params)
+		par->scp.Add(i.first, i.second);
+
 	Var::TYPE rtype = Var::VOID;
 	if (isFunc)
 	{
 		// Возвращаемый тип
 		MustBe(T_COLON);
-		MustBe(T_VARTYPE);
-		Var::TYPE rtype = Str2Type(GetCurrentValue());
+		if (!Is(T_VARTYPE))
+			throw exception();
+		rtype = Str2Type(GetCurrentValue());
 	}
 	MustBe(T_SEMICOLON);
 	Function *pFunc = new Function(id, pList, rtype);
 	pFunc->scp.SetParScope(&par->scp);
 	ParseDeclarations(pFunc);
+	pFunc->scp.Add(pFunc->_ID, pFunc->_prtype);
 	pFunc->seq = ParseStmntSeq();
 	MustBe(T_SEMICOLON);
 	return pFunc;
@@ -431,8 +439,8 @@ Expression * Parser::ParseFactor()
 
 		return new FuncCallExpr(id, vec);
 	}
-	else if (Is(T_STRING))
-		return new ExprConst(new ConstString(GetCurrentValue()));
+	//else if (Is(T_STRING))
+	//	return new ExprConst(new ConstString(GetCurrentValue()));
 	else if (Is(T_UNUMBER))
 		return new ExprConst(ParseConstNumber(GetCurrentValue()));
 	/*else if (Is(T_NIL))
@@ -468,22 +476,14 @@ ParamList * Parser::ParseParamList()
 		do
 		{
 			NextToken();
-			if (Is(T_PROC))
+			
+			if (Is(T_VAR) || Is(T_ID))
 			{
-				do
-				{
-					ShouldBe(T_ID);
-					pList->_params.push_back({ GetCurrentValue(), new ParamType(ParamType::FUNC, Var::VOID) });
-				} while (Is(T_COMMA));
-			}
-			else if (Is(T_FUNC) || Is(T_VAR) || Is(T_ID))
-			{
-				bool isFunc = Is(T_FUNC);
 				bool byRef = Is(T_VAR);
-				if (Is(T_FUNC) || Is(T_VAR))
+				if (Is(T_VAR))
 					NextToken();
 				vector<string> ids;
-				MustBe(T_ID);
+				//MustBe(T_ID);
 				ids.push_back(GetCurrentValue());
 				while (Is(T_COMMA))
 				{
@@ -491,11 +491,14 @@ ParamList * Parser::ParseParamList()
 					ids.push_back(GetCurrentValue());
 				}
 				MustBe(T_COLON);
-				MustBe(T_VARTYPE);
+
+				if (!Is(T_VARTYPE))
+					throw exception();
+
 				Var::TYPE type = Str2Type(GetCurrentValue());
-				ParamType::TYPE parType = (isFunc) ? ParamType::FUNC : ((byRef) ? ParamType::VAR_REF : ParamType::VAR);
+
 				for (auto& i : ids)
-					pList->_params.push_back({ i, new ParamType(parType, type) });
+					pList->_params.push_back({ i, new Var(type, false, byRef)});
 			}
 			else
 				throw exception();

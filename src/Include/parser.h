@@ -172,7 +172,6 @@ public:
 		if (!Is(tok))
 			throw std::exception();
 		NextToken();
-
 	}
 };
 

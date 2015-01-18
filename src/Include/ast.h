@@ -38,6 +38,10 @@ public:
 		pParScope = parScope;
 	}
 
+	bool IsRoot() {
+		return pParScope == nullptr;
+	}
+
 	bool Add(std::string var, ScopableNode* val)
 	{
 		if(scope.find(var) == scope.end()) {
@@ -48,18 +52,20 @@ public:
 			return false;
 	}
 
-	ScopableNode * Get(std::string var)
+	template<class T>
+	T * Get(std::string var)
 	{
-		auto res =scope.find(var);
-		if (res != scope.end())
-			return res->second;
-		else
-		{
-			if(pParScope == nullptr)
-				return nullptr;
-			else
-				return pParScope->Get(var);
+		T *pRes = nullptr;
+		
+		auto res = scope.find(var);
+
+		if (res == scope.end() || (pRes = dynamic_cast<T *>(res->second)) == nullptr) {
+			if (pParScope != nullptr)
+				pRes = pParScope->Get<T>(var);
+			else return nullptr;
 		}
+
+		return pRes;
 	}
 };
 
@@ -71,7 +77,7 @@ public:
 
 class ScopableNode : public Node {
 public:
-	enum TYPE {VAR, CONST, FUNC, PARAM};
+	enum TYPE {VAR, FUNC};
 
 	TYPE _type;
 
@@ -86,22 +92,18 @@ public:
 	enum TYPE { CHAR, REAL, INTEGER, BOOLEAN, VOID };
 
 	TYPE _type;
+	bool isConst, isRef;
 
-	bool isSet;
-
-	Var(TYPE type) : ScopableNode(ScopableNode::VAR), isSet(false), _type(type) {}
+	Var(TYPE type, bool isConst = false, bool isRef = false) : ScopableNode(ScopableNode::VAR), _type(type), isConst(isConst), isRef(isRef) {}
 
 	Var() : Var(VOID) {}
 };
 
-class Const : public ScopableNode {
+class Const : public Var {
 public:
-	enum TYPE { STRING, ID, UREAL, UINT, BOOL };
+	bool isNeg, isSet;
 
-	bool isNeg;
-	TYPE _type;
-
-	Const(TYPE t) : ScopableNode(ScopableNode::CONST), isNeg(false), _type(t) {}
+	Const(Var::TYPE t) : Var(t, true), isNeg(false) {}
 
 	void SetNeg(bool neg) { isNeg = neg; }
 
@@ -111,55 +113,27 @@ public:
 class ConstInteger : public Const
 {
 public:
-	int _val;
-	ConstInteger(int i) : Const(UINT), _val(i) {}
+	unsigned long long _val;
+	ConstInteger(int i) : Const(Var::INTEGER), _val(i) {}
 };
 
 class ConstBoolean : public Const
 {
 public:
 	bool _val;
-	ConstBoolean(bool i) : Const(BOOL), _val(i) {}
+	ConstBoolean(bool i) : Const(Var::BOOLEAN), _val(i) {}
 };
 
 class ConstReal : public Const
 {
 public:
 	double _val;
-	ConstReal(double i) : Const(UREAL), _val(i) {}
-};
-
-class ConstID : public Const {
-public:
-	std::string _val;
-
-	ConstID(const std::string &val) : Const(ID), _val(val) {
-	}
-};
-
-class ConstString : public Const {
-public:
-	std::string _val;
-
-	ConstString(const std::string &val) : Const(STRING), _val(val) {
-	}
-};
-
-class ParamType : public ScopableNode
-{
-public:
-	enum TYPE { VAR, VAR_REF, FUNC };
-	TYPE _type;
-
-	Var::TYPE _rvtype;
-
-	ParamType(const TYPE& t) : ParamType(t, Var::VOID) {}
-	ParamType(const TYPE& t, const Var::TYPE& rtype) : ScopableNode(PARAM), _type(t), _rvtype(rtype) {}
+	ConstReal(double i) : Const(Var::REAL), _val(i) {}
 };
 
 class ParamList {
 public:
-	typedef std::pair<std::string, ParamType *> func_param;
+	typedef std::pair<std::string, Var *> func_param;
 	std::vector<func_param> _params;
 
 	virtual ~ParamList() {
@@ -180,14 +154,14 @@ public:
 
 	void Negate() { isNeg = true; }
 
-	const Var * GetVar() {
+	const Var * GetVar(Scope *scp) {
 		if (_pVar == nullptr)
-			CalculateVar();
+			CalculateVar(scp);
 
 		return _pVar;
 	}
 
-	virtual void CalculateVar() = 0;
+	virtual void CalculateVar(Scope *scp) = 0;
 
 	virtual ~Expression() {
 		delete _pVar;
@@ -205,7 +179,7 @@ public:
 		for (auto &i : _params)
 			delete i;
 	}
-	void CalculateVar() final {
+	void CalculateVar(Scope *scp) final {
 		throw std::exception("not supported yet");
 	}
 };
@@ -220,9 +194,9 @@ public:
 
 	BinaryOp(Expression *l, Expression *r, OP o) : Expression(E_BINARY), _left(l), _right(r), _op(o) {}
 
-	void CalculateVar() final {
-		auto LeftV = _left->GetVar();
-		auto RightV = _right->GetVar();
+	void CalculateVar(Scope *scp) final {
+		auto LeftV = _left->GetVar(scp);
+		auto RightV = _right->GetVar(scp);
 
 		if (LeftV->_type != RightV->_type)
 			throw std::exception("invalid type");
@@ -251,8 +225,13 @@ public:
 	std::string id;
 
 	ExprID(const std::string& name) : Expression(E_ID), id(name) {}
-	void CalculateVar() final {
-		throw std::exception("not supported yet");
+	void CalculateVar(Scope *scp) final {
+		auto inc = scp->Get<Var>(id);
+
+		if (inc == nullptr)
+			throw std::exception();
+
+		_pVar = new Var(*inc);
 	}
 };
 
@@ -262,24 +241,8 @@ public:
 
 	ExprConst(Const *val = nullptr) : Expression(E_CONST), _val(val) {}
 
-	void CalculateVar() final {
-		switch (_val->_type) {
-		case Const::STRING:
-			throw std::exception("not supported yet");
-			break;
-		case Const::ID:
-			throw std::exception("not supported yet");
-			break;
-		case Const::UINT:
-			_pVar = new Var(Var::INTEGER);
-			break;
-		case Const::UREAL:
-			_pVar = new Var(Var::REAL);
-			break;
-		case Const::BOOL:
-			_pVar = new Var(Var::BOOLEAN);
-			break;
-		}
+	void CalculateVar(Scope *scp) final {
+		_pVar = new Var(*_val);
 	}
 
 	virtual ~ExprConst() {
@@ -297,9 +260,9 @@ public:
 
 	Condition(Expression *l, Expression *r, OP o) : Expression(E_COND), _left(l), _right(r), _op(o) {}
 
-	void CalculateVar() final {
-		auto LeftV = _left->GetVar();
-		auto RightV = _right->GetVar();
+	void CalculateVar(Scope *scp) final {
+		auto LeftV = _left->GetVar(scp);
+		auto RightV = _right->GetVar(scp);
 
 		if (_op == IN) {
 			throw std::exception("not supported yet");
@@ -443,12 +406,11 @@ public:
 	std::string _ID; // Имя функции
 	ParamList *_params; // Список параметров
 
-	Var::TYPE _rtype; // Возращаемое значение (VOID для процедуры)
+	Var *_prtype; // Возращаемое значение (VOID для процедуры)
 
 	Scope scp; // Текущая область видимости
 
-	std::vector<std::pair<std::string, Const *>> Cons; // Объявления констант
-	std::vector<std::pair<std::string, Var *>> Vars; // Объявления переменных
+	std::vector<std::pair<std::string, Var *>> Vars; // Объявления переменных и констант
 	std::vector<std::pair<std::string, Function *>> Funcs; // Объявления вложенных функций
 
 	StatementSeq *seq; // Тело функции
@@ -456,12 +418,10 @@ public:
 	bool add(const std::string &name, ScopableNode *pNode) {
 		if (!scp.Add(name, pNode))
 			return false;
+
 		switch (pNode->_type) {
 		case ScopableNode::VAR:
 			Vars.push_back({ name, dynamic_cast<Var *>(pNode) });
-			break;
-		case ScopableNode::CONST:
-			Cons.push_back({ name, dynamic_cast<Const *>(pNode) });
 			break;
 		case ScopableNode::FUNC:
 			Funcs.push_back({ name, dynamic_cast<Function *>(pNode) });
@@ -470,18 +430,25 @@ public:
 		return true;
 	}
 
-	Function(const std::string& id, ParamList *par, Var::TYPE rtype = Var::VOID) : ScopableNode(ScopableNode::FUNC),  scp(_ID), _ID(id), _params(par), _rtype(rtype) {
+	Function(const std::string& id, ParamList *par, Var::TYPE rtype = Var::VOID) : ScopableNode(ScopableNode::FUNC),  scp(_ID), _ID(id), _params(par) {
+		_prtype = new Var(rtype);
 	}
 
 	virtual ~Function() {
-		for (auto &i : Cons)
-			delete i.second;
 		for (auto &i : Vars)
 			delete i.second;
 		for (auto &i : Funcs)
 			delete i.second;
 
+		delete _prtype;
 		delete seq;
+	}
+
+	unsigned GetNumOfParams() const {
+		if (_params != nullptr)
+			return _params->_params.size();
+
+		return 0;
 	}
 
 
@@ -495,7 +462,7 @@ class Root : public Function
 {
 public:
 
-	Root() : Function("", nullptr) {
+	Root() : Function("", nullptr, Var::INTEGER) {
 	}
 
 	virtual ~Root()
