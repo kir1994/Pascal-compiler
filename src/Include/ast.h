@@ -3,6 +3,7 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <algorithm>
 
 class Expression;
 class Function;
@@ -89,7 +90,8 @@ public:
 class Var : public ScopableNode
 {
 public:
-	enum TYPE { CHAR, REAL, INTEGER, BOOLEAN, VOID };
+	/// @brief	“ипы переменных, отсортированные по приоритету
+	enum TYPE { REAL, INTEGER, CHAR, BOOLEAN, VOID };
 
 	TYPE _type;
 	bool isConst, isRef;
@@ -97,6 +99,8 @@ public:
 	Var(TYPE type, bool isConst = false, bool isRef = false) : ScopableNode(ScopableNode::VAR), _type(type), isConst(isConst), isRef(isRef) {}
 
 	Var() : Var(VOID) {}
+
+	
 };
 
 class Const : public Var {
@@ -163,6 +167,8 @@ public:
 
 	virtual void CalculateVar(Scope *scp) = 0;
 
+
+
 	virtual ~Expression() {
 		delete _pVar;
 	}
@@ -195,23 +201,22 @@ public:
 	BinaryOp(Expression *l, Expression *r, OP o) : Expression(E_BINARY), _left(l), _right(r), _op(o) {}
 
 	void CalculateVar(Scope *scp) final {
-		auto LeftV = _left->GetVar(scp);
-		auto RightV = _right->GetVar(scp);
+		Var::TYPE LeftT = _left->GetVar(scp)->_type;
+		Var::TYPE RightT = _right->GetVar(scp)->_type;
 
-		if (LeftV->_type != RightV->_type)
+		if (LeftT >= Var::VOID || RightT >= Var::VOID)
 			throw std::exception("invalid type");
 
-		if (LeftV->_type >= Var::VOID)
-			throw std::exception("invalid type");
+		Var::TYPE ResT = std::min(LeftT, RightT);
 
-		if ((_op == INT_DIV || _op == MOD || _op == AND || _op == OR) &&
-			LeftV->_type != Var::INTEGER)
-			throw std::exception("invalid type");
+		if (_op == INT_DIV || _op == MOD || _op == AND || _op == OR) {
+			if (LeftT == Var::REAL || RightT == Var::REAL)
+				throw std::exception("invalid type");
+		}
+		else if (_op == DIV)
+			ResT = Var::REAL;
 
-		if (_op == DIV)
-			_pVar = new Var(Var::REAL);
-		else
-			_pVar = new Var(LeftV->_type);
+		_pVar = new Var(ResT);
 	}
 
 	virtual ~BinaryOp() {
@@ -225,6 +230,7 @@ public:
 	std::string id;
 
 	ExprID(const std::string& name) : Expression(E_ID), id(name) {}
+
 	void CalculateVar(Scope *scp) final {
 		auto inc = scp->Get<Var>(id);
 
@@ -264,12 +270,8 @@ public:
 		auto LeftV = _left->GetVar(scp);
 		auto RightV = _right->GetVar(scp);
 
-		if (_op == IN) {
+		if (_op == IN)
 			throw std::exception("not supported yet");
-		}
-
-		if (LeftV->_type != RightV->_type)
-			throw std::exception("invalid type");
 
 		if (LeftV->_type >= Var::VOID)
 			throw std::exception("invalid type");

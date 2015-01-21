@@ -25,20 +25,38 @@ llvm::Value * CodeGenerator::GenStmntSeq(StatementSeq *pSeq) {
 }
 
 llvm::Value * CodeGenerator::GenExpression(Expression *pEl) {
+
+	llvm::Value *pRes;
 	switch (pEl->_type) {
 	case Expression::E_BINARY:
-		return GenBinaryOp(dynamic_cast<BinaryOp *>(pEl));
+		pRes = GenBinaryOp(dynamic_cast<BinaryOp *>(pEl));
+		break;
 	case Expression::E_COND:
-		return GenCondition(dynamic_cast<Condition *>(pEl));
+		pRes = GenCondition(dynamic_cast<Condition *>(pEl));
+		break;
 	case Expression::E_CONST:
-		return GenExprConst(dynamic_cast<ExprConst *>(pEl));
+		pRes = GenExprConst(dynamic_cast<ExprConst *>(pEl));
+		break;
 	case Expression::E_ID:
-		return GenExprID(dynamic_cast<ExprID *>(pEl));
+		pRes = GenExprID(dynamic_cast<ExprID *>(pEl));
+		break;
 	case Expression::E_FUNCCALL:
-		return GenFuncCallExpr(dynamic_cast<FuncCallExpr *>(pEl));
+		pRes = GenFuncCallExpr(dynamic_cast<FuncCallExpr *>(pEl));
+		break;
 	default:
 		throw std::exception("undefined expression type");
 	}
+
+	//  остыль дл€ обработки унарного минуса :)
+	if (pEl->isNeg == true) {
+		auto Type = pEl->GetVar(m_pCurScope)->_type;
+		if (Type == Var::REAL)
+			pRes = m_pBuilder->CreateFSub(llvm::Constant::getNullValue(pRes->getType()), pRes, "negate");
+		else
+			pRes = m_pBuilder->CreateSub(llvm::Constant::getNullValue(pRes->getType()), pRes, "negate");
+	}
+
+	return pRes;
 }
 
 llvm::Value * CodeGenerator::GenExprID(ExprID *pEl) {
@@ -77,38 +95,40 @@ llvm::Value * CodeGenerator::GenExprConst(ExprConst *pEl) {
 }
 
 llvm::Value * CodeGenerator::GenBinaryOp(BinaryOp *pEl) {
-	llvm::Value *pLeft = GenExpression(pEl->_left);
-	llvm::Value *pRight = GenExpression(pEl->_right);
 
-	auto Type = pEl->GetVar(m_pCurScope)->_type;
+	auto *pType = pEl->GetVar(m_pCurScope);
+
+	llvm::Value *pLeft = ExpressionCaster(pEl->_left, pType);
+	llvm::Value *pRight = ExpressionCaster(pEl->_right, pType);
+
 
 	switch (pEl->_op) {
 	case BinaryOp::MUL:
-		switch (Type) {
-		case Var::REAL:
-			return m_pBuilder->CreateFMul(pLeft, pRight, "mulreal");
-		case Var::INTEGER:
-			return m_pBuilder->CreateMul(pLeft, pRight, "mulint");
-		default:
-			throw std::exception("not supported yet");
-		}
+		return pType->_type == Var::REAL ? 
+			m_pBuilder->CreateFMul(pLeft, pRight, "mulreal") :
+			m_pBuilder->CreateMul(pLeft, pRight, "mulint");
 	case BinaryOp::ADD:
-		switch (Type) {
-		case Var::REAL:
-			return m_pBuilder->CreateFAdd(pLeft, pRight, "addtmp");
-		default:
-			throw std::exception("not supported yet");
-		}
-	case BinaryOp::DIV:
-	case BinaryOp::INT_DIV:
-	case BinaryOp::MOD:
-	case BinaryOp::AND:
+		return pType->_type == Var::REAL ?
+			m_pBuilder->CreateFAdd(pLeft, pRight, "addreal") :
+			m_pBuilder->CreateAdd(pLeft, pRight, "addint");
 	case BinaryOp::SUB:
+		return pType->_type == Var::REAL ?
+			m_pBuilder->CreateFSub(pLeft, pRight, "subreal") :
+			m_pBuilder->CreateSub(pLeft, pRight, "subint");
+	case BinaryOp::DIV:
+		return m_pBuilder->CreateFDiv(pLeft, pRight, "divreal");
+		break;
+	case BinaryOp::INT_DIV:
+		return m_pBuilder->CreateSDiv(pLeft, pRight, "divint");
+	case BinaryOp::MOD:
+		return m_pBuilder->CreateSRem(pLeft, pRight, "modint");
+	case BinaryOp::AND:
+		return m_pBuilder->CreateAnd(pLeft, pRight, "andint");
 	case BinaryOp::OR:
+		return m_pBuilder->CreateOr(pLeft, pRight, "orint");
 	default:
 		throw std::exception("not supported yet");
 	}
-
 
 }
 
@@ -151,9 +171,10 @@ llvm::Value * CodeGenerator::GenForStatement(ForStatement *pEl) {
 }
 
 llvm::Value * CodeGenerator::GenAssignStatement(AssignStatement *pEl) {
-	llvm::Value *pAssignValue = GenExpression(pEl->_expr);
+	Var *pVar = m_pCurScope->Get<Var>(pEl->_var);
 
-	ScopableNode *pVar = m_pCurScope->Get<Var>(pEl->_var);
+	llvm::Value *pAssignValue = ExpressionCaster(pEl->_expr, pVar);
+
 	llvm::Value *pVarValue = m_ValueMap[pVar];
 
 	m_pBuilder->CreateStore(pAssignValue, pVarValue);
@@ -318,7 +339,7 @@ llvm::Value * CodeGenerator::GenTerm() { return nullptr; }
 llvm::Value * CodeGenerator::GenFactor() { return nullptr; }
 */
 
-llvm::Type * CodeGenerator::GetType(Var *pV) {
+llvm::Type * CodeGenerator::GetType(const Var *pV) {
 	switch (pV->_type) {
 	case Var::BOOLEAN:
 		return llvm::IntegerType::get(m_Context, 1);

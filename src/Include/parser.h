@@ -73,7 +73,7 @@ static std::unordered_set<std::string> NAMES = {
 	
 };
 static std::unordered_set<std::string> TYPE_NAMES = {
-	"integer", "char", "Boolean", "real"
+	"integer", "char", "boolean", "real"
 };
 static std::unordered_set<std::string> COND_NAMES = {
 	"=", "<>", ">", ">=", 

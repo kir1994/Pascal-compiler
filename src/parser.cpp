@@ -10,7 +10,7 @@ Var::TYPE Str2Type(const std::string& type)
 		return Var::INTEGER;
 	else if (type == "char")
 		return Var::CHAR;
-	else if (type == "Boolean")
+	else if (type == "boolean")
 		return Var::BOOLEAN;
 	else
 		throw exception();

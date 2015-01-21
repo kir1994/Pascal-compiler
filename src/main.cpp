@@ -6,13 +6,14 @@
 
 int main(int argc, char **argv) {
   std::ifstream input;
-  input.open("..\\tests\\test3.pas");
+  input.open("123.txt");
+
   Parser *P = new Parser(input);
   P->Parse();
-  if (P->IsSuccess())
-	  std::cout << "Success!\n";
-  else
-	  std::cout << "\nFail...:(\n";
+  if (!P->IsSuccess()) {
+	  std::cout << "Parser failed... :(\n";
+	  return 1;
+  }
 
   CodeGenerator *pGen = CodeGenerator::getInstance();
   pGen->Generate(P);
@@ -24,5 +25,6 @@ int main(int argc, char **argv) {
   std::cout << "Result: " << res << std::endl;
 
   pGen->Release();
+
   return 0;
 }
