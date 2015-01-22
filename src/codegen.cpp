@@ -159,15 +159,168 @@ llvm::Value * CodeGenerator::GenFuncCallExpr(FuncCallExpr *pEl) {
 }
 
 llvm::Value * CodeGenerator::GenCondition(Condition *pEl) {
-	throw std::exception("not supported yet");
+	const Var *pLeftT = pEl->_left->GetVar(m_pCurScope);
+	const Var *pRightT = pEl->_right->GetVar(m_pCurScope);
+	const Var *pBestT = Expression::GetBestType(pLeftT, pRightT);
+
+	llvm::Value *pLeftV = ExpressionCaster(pEl->_left, pBestT);
+	llvm::Value *pRightV = ExpressionCaster(pEl->_right, pBestT);
+
+	llvm::CmpInst::Predicate Op;
+
+	switch (pEl->_op) {
+	case Condition::EQ:
+		switch (pBestT->_type) {
+		case Var::REAL:
+			Op = llvm::CmpInst::Predicate::FCMP_OEQ; break;
+		default:
+			Op = llvm::CmpInst::Predicate::ICMP_EQ;
+		}
+
+		break;
+	case Condition::NEQ:
+		switch (pBestT->_type) {
+		case Var::REAL:
+			Op = llvm::CmpInst::Predicate::FCMP_ONE; break;
+		default:
+			Op = llvm::CmpInst::Predicate::ICMP_NE;
+		}
+
+		break;
+	case Condition::LT:
+		switch (pBestT->_type) {
+		case Var::REAL:
+			Op = llvm::CmpInst::Predicate::FCMP_OLT; break;
+		case Var::BOOLEAN:
+			Op = llvm::CmpInst::Predicate::ICMP_ULT; break;
+		default:
+			Op = llvm::CmpInst::Predicate::ICMP_SLT;
+		}
+
+		break;
+	case Condition::LE:
+		switch (pBestT->_type) {
+		case Var::REAL:
+			Op = llvm::CmpInst::Predicate::FCMP_OLE; break;
+		case Var::BOOLEAN:
+			Op = llvm::CmpInst::Predicate::ICMP_ULE; break;
+		default:
+			Op = llvm::CmpInst::Predicate::ICMP_SLE;
+		}
+
+		break;
+	case Condition::GT:
+		switch (pBestT->_type) {
+		case Var::REAL:
+			Op = llvm::CmpInst::Predicate::FCMP_OGT; break;
+		case Var::BOOLEAN:
+			Op = llvm::CmpInst::Predicate::ICMP_UGT; break;
+		default:
+			Op = llvm::CmpInst::Predicate::ICMP_SGT;
+		}
+
+		break;
+	case Condition::GE:
+		switch (pBestT->_type) {
+		case Var::REAL:
+			Op = llvm::CmpInst::Predicate::FCMP_OGE; break;
+		case Var::BOOLEAN:
+			Op = llvm::CmpInst::Predicate::ICMP_UGE; break;
+		default:
+			Op = llvm::CmpInst::Predicate::ICMP_SGE;
+		}
+
+		break;
+	case Condition::IN:
+	default:
+		throw exception("not supported yet");
+	}
+
+	if (Op <= llvm::CmpInst::Predicate::LAST_FCMP_PREDICATE)
+		return m_pBuilder->CreateFCmp(Op, pLeftV, pRightV);
+	else
+		return m_pBuilder->CreateICmp(Op, pLeftV, pRightV);
 }
 
 llvm::Value * CodeGenerator::GenIfStatement(IfStatement *pEl) {
-	throw std::exception("not supported yet");
+	Var VarBool(Var::BOOLEAN);
+	llvm::Value *pCondV = ExpressionCaster(pEl->_cond, &VarBool);
+
+	llvm::Function *TheFunction = m_pBuilder->GetInsertBlock()->getParent();
+
+	llvm::BasicBlock *pThenBB = llvm::BasicBlock::Create(m_Context, "then", TheFunction);
+	llvm::BasicBlock *pElseBB = llvm::BasicBlock::Create(m_Context, "else");
+	llvm::BasicBlock *pMergeBB = llvm::BasicBlock::Create(m_Context, "ifcont");
+
+	m_pBuilder->CreateCondBr(pCondV, pThenBB, pElseBB);
+
+	m_pBuilder->SetInsertPoint(pThenBB);
+	llvm::Value *pThenV = GenStatement(pEl->_then);
+
+	m_pBuilder->CreateBr(pMergeBB);
+	pThenBB = m_pBuilder->GetInsertBlock();
+
+	TheFunction->getBasicBlockList().push_back(pElseBB);
+	m_pBuilder->SetInsertPoint(pElseBB);
+
+	llvm::Value *pElseV = GenStatement(pEl->_else);
+	m_pBuilder->CreateBr(pMergeBB);
+
+	pElseBB = m_pBuilder->GetInsertBlock();
+	TheFunction->getBasicBlockList().push_back(pMergeBB);
+	m_pBuilder->SetInsertPoint(pMergeBB);
+
+	return nullptr;
 }
 
 llvm::Value * CodeGenerator::GenForStatement(ForStatement *pEl) {
-	throw std::exception("not supported yet");
+	llvm::Function *TheFunction = m_pBuilder->GetInsertBlock()->getParent();
+
+	Var *pForT = m_pCurScope->Get<Var>(pEl->_var);
+	if (!pForT->Is(Var::INTEGER))
+		throw exception("incorrect variable type");
+	llvm::Value *pForV = m_ValueMap[pForT];
+	llvm::Value *pFrom = ExpressionCaster(pEl->_from, pForT);
+	m_pBuilder->CreateStore(pFrom, pForV); // Присваиваем начальное значение
+
+	// Определяем шаг цикла
+	llvm::Value *pStepV;
+	if (pEl->_type == ForStatement::TO)
+		pStepV = llvm::ConstantInt::get(m_Context, llvm::APInt(sizeof(int) * 8, 1));
+	else
+		pStepV = llvm::ConstantInt::get(m_Context, llvm::APInt(sizeof(int) * 8, -1));
+
+	
+	llvm::BasicBlock *pCondBB = llvm::BasicBlock::Create(m_Context, "loopcond", TheFunction);
+	llvm::BasicBlock *pBodyBB = llvm::BasicBlock::Create(m_Context, "loop", TheFunction);
+	llvm::BasicBlock *pAfterBB = llvm::BasicBlock::Create(m_Context, "afterloop", TheFunction);
+
+	// Проверяем условие выхода
+	m_pBuilder->CreateBr(pCondBB);
+	m_pBuilder->SetInsertPoint(pCondBB);
+	llvm::Value *pTo = ExpressionCaster(pEl->_to, pForT);
+	llvm::Value *pEndCond;
+
+	llvm::Value *pCurVar = m_pBuilder->CreateLoad(pForV, pEl->_var.c_str());
+	if (pEl->_type == ForStatement::TO)
+		pEndCond = m_pBuilder->CreateICmpSLE(pCurVar, pTo, "endloop");
+	else
+		pEndCond = m_pBuilder->CreateICmpSGE(pCurVar, pTo, "endloop");
+
+	m_pBuilder->CreateCondBr(pEndCond, pBodyBB, pAfterBB);
+	
+	// Генерируем тело цикла
+	m_pBuilder->SetInsertPoint(pBodyBB);
+	llvm::Value *pBody = GenStatement(pEl->_do);
+
+	llvm::Value *pNextVar = m_pBuilder->CreateAdd(pCurVar, pStepV, "nextvar");
+	m_pBuilder->CreateStore(pNextVar, pForV);
+	m_pBuilder->CreateBr(pCondBB);
+
+	// Выход из цикла
+	m_pBuilder->SetInsertPoint(pAfterBB);
+
+	return nullptr;
 }
 
 llvm::Value * CodeGenerator::GenAssignStatement(AssignStatement *pEl) {
@@ -291,7 +444,17 @@ llvm::Value * CodeGenerator::GenStatement(Statement *pStmt) {
 		return GenProcCallStatement(pCall);
 	}
 	case Statement::S_IF:
+	{
+		IfStatement *pIf = dynamic_cast<IfStatement *>(pStmt);
+		return GenIfStatement(pIf);
+	}
 	case Statement::S_FOR:
+	{
+		ForStatement *pFor = dynamic_cast<ForStatement *>(pStmt);
+		return GenForStatement(pFor);
+	}
+	case Statement::S_EMPTY:
+		return nullptr;
 	case Statement::S_WHILE:
 	case Statement::S_REPEAT:
 	default:
@@ -299,45 +462,50 @@ llvm::Value * CodeGenerator::GenStatement(Statement *pStmt) {
 	};
 }
 
-llvm::Value * CodeGenerator::GenVar(Var *pVar) {
-	switch (pVar->_type) {
-	case Var::CHAR:
-	case Var::REAL:
-	case Var::INTEGER:
-	case Var::BOOLEAN:
-	case Var::VOID:
-	default:
-		return nullptr;
-	};
+llvm::Value * CodeGenerator::ExpressionCaster(Expression *pExp, const Var *pTo) {
 
-}
-/*
+	llvm::Value *pExpValue = GenExpression(pExp);
 
+	auto pType = pExp->GetVar(m_pCurScope);
 
-llvm::Value * CodeGenerator::GenConst(Const *pNode) {
-	switch (pNode->_type) {
-	case Const::NUMBER:
-		if (pNode->_val.find('.') != string::npos)
-			return llvm::ConstantFP::get(m_Context, llvm::APFloat(atof(pNode->_val.c_str())));
-		else
-			return llvm::ConstantInt::get(m_Context, llvm::APInt(sizeof(int) * 8, atoi(pNode->_val.c_str())));
-		break;
-	case Const::ID:
-		break;
-	case Const::STRING:
-		break;
+	llvm::Instruction::CastOps CastOp;
+	std::string CastName = "cast";
+
+	if (pType->_type != pTo->_type) {
+		llvm::Type *pDestT = GetType(pTo);
+
+		switch (pType->_type) {
+		case Var::REAL:
+			CastName += "real";
+			if (pTo->_type != Var::BOOLEAN)
+				CastOp = llvm::Instruction::CastOps::FPToSI;
+			else
+				CastOp = llvm::Instruction::CastOps::FPToUI;
+			break;
+		case Var::INTEGER:
+		case Var::CHAR:
+			CastName += "int";
+			if (pTo->_type == Var::REAL)
+				CastOp = llvm::Instruction::CastOps::SIToFP;
+			else
+				return m_pBuilder->CreateIntCast(pExpValue, pDestT, true, CastName);
+			break;
+		case Var::BOOLEAN:
+			CastName += "bool";
+			if (pTo->_type == Var::REAL)
+				CastOp = llvm::Instruction::CastOps::UIToFP;
+			else
+				return m_pBuilder->CreateIntCast(pExpValue, pDestT, false, CastName);
+
+		default:
+			std::exception("illegal type cast");
+		}
+
+		pExpValue = m_pBuilder->CreateCast(CastOp, pExpValue, pDestT, CastName);
 	}
 
-	return nullptr;
+	return pExpValue;
 }
-llvm::Value * CodeGenerator::GenProcedure() { return nullptr; }
-
-llvm::Value * CodeGenerator::GenParamList() { return nullptr; }
-llvm::Value * CodeGenerator::GenExpression() { return nullptr; }
-llvm::Value * CodeGenerator::GenSimpleExpression() { return nullptr; }
-llvm::Value * CodeGenerator::GenTerm() { return nullptr; }
-llvm::Value * CodeGenerator::GenFactor() { return nullptr; }
-*/
 
 llvm::Type * CodeGenerator::GetType(const Var *pV) {
 	switch (pV->_type) {

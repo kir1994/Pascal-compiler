@@ -372,7 +372,7 @@ Statement * Parser::ParseStatement()
 
 		return new RepeatStatement(expr, seq);
 	}
-	throw exception();
+	else return new Statement(Statement::TYPE::S_EMPTY);
 }
 
 Expression * Parser::ParseExpression()

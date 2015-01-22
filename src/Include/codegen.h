@@ -53,60 +53,13 @@ private:
 	llvm::Value * GenFuncCallExpr(FuncCallExpr *pEl);
 	llvm::Value * GenCondition(Condition *pEl);
 	
-
-	llvm::Value * GenConst(Const *pEl);
-	llvm::Value * GenVar(Var *pVar);
-	
 	llvm::Function * GenFunctionHeader(Function *pFunc);
 	llvm::Value * GenFunctionBody(Function *pFunc);
 	llvm::Value * GenFunction(Function *pEl);
 
 	llvm::Type * GetType(const Var *pV);
 
-	llvm::Value * ExpressionCaster(Expression *pExp, const Var *pTo) {
-
-		llvm::Value *pExpValue = GenExpression(pExp);
-
-		auto pType = pExp->GetVar(m_pCurScope);
-
-		llvm::Instruction::CastOps CastOp;
-		std::string CastName = "cast";
-
-		if (pType->_type != pTo->_type) {
-			llvm::Type *pDestT = GetType(pTo);
-
-			switch (pType->_type) {
-			case Var::REAL:
-				CastName += "real";
-				if (pTo->_type != Var::BOOLEAN)
-					CastOp = llvm::Instruction::CastOps::FPToSI;
-				else 
-					CastOp = llvm::Instruction::CastOps::FPToUI;
-				break;
-			case Var::INTEGER:
-			case Var::CHAR:
-				CastName += "int";
-				if (pTo->_type == Var::REAL)
-					CastOp = llvm::Instruction::CastOps::SIToFP;
-				else
-					return m_pBuilder->CreateIntCast(pExpValue, pDestT, true, CastName);
-				break;
-			case Var::BOOLEAN:
-				CastName += "bool";
-				if (pTo->_type == Var::REAL)
-					CastOp = llvm::Instruction::CastOps::UIToFP;
-				else
-					return m_pBuilder->CreateIntCast(pExpValue, pDestT, false, CastName);
-
-			default:
-				std::exception("illegal type cast");
-			}
-
-			pExpValue = m_pBuilder->CreateCast(CastOp, pExpValue, pDestT, CastName);
-		}
-
-		return pExpValue;
-	}
+	llvm::Value * ExpressionCaster(Expression *pExp, const Var *pTo);
 
 	llvm::Value *CreateEntryBlockAlloca(llvm::Function *TheFunction,
 		const std::string &VarName, Var *pVarType, bool IsGlobal = false) {

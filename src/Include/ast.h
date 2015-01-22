@@ -100,7 +100,9 @@ public:
 
 	Var() : Var(VOID) {}
 
-	
+	bool Is(const TYPE &t) const {
+		return _type == t;
+	}
 };
 
 class Const : public Var {
@@ -158,6 +160,10 @@ public:
 
 	void Negate() { isNeg = true; }
 
+	static const Var *GetBestType(const Var *pT1, const Var *pT2) {
+		return (pT1->_type > pT2->_type ? pT2 : pT1);
+	}
+
 	const Var * GetVar(Scope *scp) {
 		if (_pVar == nullptr)
 			CalculateVar(scp);
@@ -201,16 +207,16 @@ public:
 	BinaryOp(Expression *l, Expression *r, OP o) : Expression(E_BINARY), _left(l), _right(r), _op(o) {}
 
 	void CalculateVar(Scope *scp) final {
-		Var::TYPE LeftT = _left->GetVar(scp)->_type;
-		Var::TYPE RightT = _right->GetVar(scp)->_type;
+		const Var *pLeftT = _left->GetVar(scp);
+		const Var *pRightT = _right->GetVar(scp);
 
-		if (LeftT >= Var::VOID || RightT >= Var::VOID)
+		if (pLeftT->_type >= Var::VOID || pRightT->_type >= Var::VOID)
 			throw std::exception("invalid type");
 
-		Var::TYPE ResT = std::min(LeftT, RightT);
+		Var::TYPE ResT = GetBestType(pLeftT, pRightT)->_type;
 
 		if (_op == INT_DIV || _op == MOD || _op == AND || _op == OR) {
-			if (LeftT == Var::REAL || RightT == Var::REAL)
+			if (pLeftT->_type == Var::REAL || pRightT->_type == Var::REAL)
 				throw std::exception("invalid type");
 		}
 		else if (_op == DIV)
@@ -287,7 +293,7 @@ public:
 
 class Statement : public Node {
 public:
-	enum TYPE{S_SEQ, S_IF, S_FOR, S_WHILE, S_ASSIGN, S_PROCCALL, S_REPEAT};
+	enum TYPE{S_SEQ, S_IF, S_FOR, S_WHILE, S_ASSIGN, S_PROCCALL, S_REPEAT, S_EMPTY};
 
 	TYPE _type;
 	Statement(TYPE type) : _type(type) {}
