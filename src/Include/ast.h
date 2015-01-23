@@ -61,8 +61,12 @@ public:
 		auto res = scope.find(var);
 
 		if (res == scope.end() || (pRes = dynamic_cast<T *>(res->second)) == nullptr) {
-			if (pParScope != nullptr)
+			if (pParScope != nullptr)  {
 				pRes = pParScope->Get<T>(var);
+				// Костыль. Вложенные функции не видят обычные переменные родительской функции
+				if (!pParScope->IsRoot() && dynamic_cast<ScopableNode *>(pRes)->_type != ScopableNode::FUNC && dynamic_cast<Const *>(pRes) == nullptr)
+					return nullptr;
+			}
 			else return nullptr;
 		}
 
@@ -120,7 +124,7 @@ class ConstInteger : public Const
 {
 public:
 	unsigned long long _val;
-	ConstInteger(int i) : Const(Var::INTEGER), _val(i) {}
+	ConstInteger(const unsigned long long &i) : Const(Var::INTEGER), _val(i) {}
 };
 
 class ConstBoolean : public Const
@@ -180,21 +184,6 @@ public:
 	}
 };
 
-class FuncCallExpr : public Expression {
-public:
-	std::string _name;
-	std::vector<Expression *> _params;
-
-	FuncCallExpr(const std::string& s, const std::vector<Expression *>& par) : Expression(E_FUNCCALL), _name(s), _params(par) {}
-
-	virtual ~FuncCallExpr() {
-		for (auto &i : _params)
-			delete i;
-	}
-	void CalculateVar(Scope *scp) final {
-		throw std::exception("not supported yet");
-	}
-};
 
 class BinaryOp : public Expression {
 public:
@@ -463,6 +452,22 @@ public:
 	std::string GetID()
 	{
 		return _ID;
+	}
+};
+
+class FuncCallExpr : public Expression {
+public:
+	std::string _name;
+	std::vector<Expression *> _params;
+
+	FuncCallExpr(const std::string& s, const std::vector<Expression *>& par) : Expression(E_FUNCCALL), _name(s), _params(par) {}
+
+	virtual ~FuncCallExpr() {
+		for (auto &i : _params)
+			delete i;
+	}
+	void CalculateVar(Scope *scp) final {
+		_pVar = new Var(*scp->Get<Function>(_name)->_prtype);
 	}
 };
 

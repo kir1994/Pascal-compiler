@@ -2,11 +2,14 @@
 
 CodeGenerator *CodeGenerator::m_pInst = nullptr;
 
-CodeGenerator::CodeGenerator() : m_Context(llvm::getGlobalContext()), m_pCurScope(nullptr) {
+CodeGenerator::CodeGenerator() : m_Context(llvm::getGlobalContext()), 
+								 m_pCurScope(nullptr), m_pOurFPM(nullptr), m_pExe(nullptr) 
+{
 	m_pBuilder = new llvm::IRBuilder<>(m_Context);
 }
 
 CodeGenerator::~CodeGenerator() {
+	delete m_pExe;
 }
 
 llvm::Value * CodeGenerator::GenRoot(Root *pRoot) {
@@ -59,39 +62,47 @@ llvm::Value * CodeGenerator::GenExpression(Expression *pEl) {
 	return pRes;
 }
 
-llvm::Value * CodeGenerator::GenExprID(ExprID *pEl) {
+llvm::Value * CodeGenerator::GenExprID(ExprID *pEl, bool getRef) {
 
-	ScopableNode *pNode = m_pCurScope->Get<Var>(pEl->id);
+	Var *pNode = m_pCurScope->Get<Var>(pEl->id);
 	llvm::Value *pV = m_ValueMap[pNode];
 
 	if (pV == nullptr)
 		throw std::exception("Unknown variable name");
 
-	return m_pBuilder->CreateLoad(pV, pEl->id.c_str());
+	if (pNode->isRef)
+		pV = m_pBuilder->CreateLoad(pV, pEl->id.c_str());
+
+	if (getRef == false)
+		pV = m_pBuilder->CreateLoad(pV, pEl->id.c_str());
+
+	return pV;
 }
 
-llvm::Value * CodeGenerator::GenExprConst(ExprConst *pEl) {
-	Const *pC = pEl->_val;
-	
+llvm::Constant * CodeGenerator::GetConstValue(const Const *pC) {
 	switch (pC->_type) {
 	case Const::INTEGER:
 	{
-		auto inc = dynamic_cast<ConstInteger *>(pC);
+		auto inc = dynamic_cast<const ConstInteger *>(pC);
 		return llvm::ConstantInt::get(m_Context, llvm::APInt(sizeof(int) * 8, inc->_val));
 	}
 	case Const::REAL:
 	{
-		auto inc = dynamic_cast<ConstReal *>(pC);
+		auto inc = dynamic_cast<const ConstReal *>(pC);
 		return llvm::ConstantFP::get(m_Context, llvm::APFloat(inc->_val));
 	}
 	case Const::BOOLEAN:
 	{
-		auto inc = dynamic_cast<ConstBoolean *>(pC);
+		auto inc = dynamic_cast<const ConstBoolean *>(pC);
 		return llvm::ConstantInt::get(m_Context, llvm::APInt(1, inc->_val));
 	}
 	default:
 		throw std::exception("undefined const expression");
 	}
+}
+
+llvm::Value * CodeGenerator::GenExprConst(ExprConst *pEl) {
+	return GetConstValue(pEl->_val);
 }
 
 llvm::Value * CodeGenerator::GenBinaryOp(BinaryOp *pEl) {
@@ -140,22 +151,23 @@ llvm::Value * CodeGenerator::GenProcCallStatement(ProcCallStatement *pEl) {
 }
 
 llvm::Value * CodeGenerator::GenFuncCallExpr(FuncCallExpr *pEl) {
-	llvm::Function *pFunc = m_pMainModule->getFunction(pEl->_name);
+	auto pFunc = m_pCurScope->Get<Function>(pEl->_name);
 
 	if (pFunc == nullptr)
 		throw std::exception("Unknown function referenced");
 
-	if (pFunc->arg_size() != pEl->_params.size())
+	if (pFunc->_params->_params.size() != pEl->_params.size())
 		throw std::exception("Incorrect # arguments passed");
 
 	std::vector<llvm::Value *> ArgsV;
 
 	for (unsigned i = 0, e = pEl->_params.size(); i != e; ++i) {
-		ArgsV.push_back(GenExpression(pEl->_params[i]));
+		ArgsV.push_back(ExpressionCaster(pEl->_params[i], pFunc->_params->_params[i].second));
 		if (ArgsV.back() == 0) return 0;
 	}
 
-	return m_pBuilder->CreateCall(pFunc, ArgsV, "calltmp");
+	llvm::Function *pFunction = llvm::dyn_cast<llvm::Function>(m_ValueMap[pFunc]);
+	return m_pBuilder->CreateCall(pFunction, ArgsV);
 }
 
 llvm::Value * CodeGenerator::GenCondition(Condition *pEl) {
@@ -285,12 +297,9 @@ llvm::Value * CodeGenerator::GenForStatement(ForStatement *pEl) {
 
 	// Определяем шаг цикла
 	llvm::Value *pStepV;
-	if (pEl->_type == ForStatement::TO)
-		pStepV = llvm::ConstantInt::get(m_Context, llvm::APInt(sizeof(int) * 8, 1));
-	else
-		pStepV = llvm::ConstantInt::get(m_Context, llvm::APInt(sizeof(int) * 8, -1));
+	ConstInteger Step((pEl->_type == ForStatement::TO ? 1 : -1));
+	pStepV = GetConstValue(&Step);
 
-	
 	llvm::BasicBlock *pCondBB = llvm::BasicBlock::Create(m_Context, "loopcond", TheFunction);
 	llvm::BasicBlock *pBodyBB = llvm::BasicBlock::Create(m_Context, "loop", TheFunction);
 	llvm::BasicBlock *pAfterBB = llvm::BasicBlock::Create(m_Context, "afterloop", TheFunction);
@@ -323,15 +332,77 @@ llvm::Value * CodeGenerator::GenForStatement(ForStatement *pEl) {
 	return nullptr;
 }
 
+llvm::Value * CodeGenerator::GenWhileStatement(WhileStatement *pEl) {
+	llvm::Function *TheFunction = m_pBuilder->GetInsertBlock()->getParent();
+
+	llvm::BasicBlock *pCondBB = llvm::BasicBlock::Create(m_Context, "loopcond", TheFunction);
+	llvm::BasicBlock *pBodyBB = llvm::BasicBlock::Create(m_Context, "loopbody", TheFunction);
+	llvm::BasicBlock *pAfterBB = llvm::BasicBlock::Create(m_Context, "afterloop", TheFunction);
+
+	// Проверяем условие выхода
+	m_pBuilder->CreateBr(pCondBB);
+	m_pBuilder->SetInsertPoint(pCondBB);
+	Var VarBool(Var::BOOLEAN);
+	llvm::Value *pCond = ExpressionCaster(pEl->_condition, &VarBool);
+
+	m_pBuilder->CreateCondBr(pCond, pBodyBB, pAfterBB);
+
+	// Генерируем тело цикла
+	m_pBuilder->SetInsertPoint(pBodyBB);
+	llvm::Value *pBody = GenStatement(pEl->_st);
+	m_pBuilder->CreateBr(pCondBB);
+
+	// Выход из цикла
+	m_pBuilder->SetInsertPoint(pAfterBB);
+
+	return nullptr;
+}
+
+llvm::Value * CodeGenerator::GenRepeatStatement(RepeatStatement *pEl) {
+	llvm::Function *TheFunction = m_pBuilder->GetInsertBlock()->getParent();
+
+	llvm::BasicBlock *pBodyBB = llvm::BasicBlock::Create(m_Context, "loopbody", TheFunction);
+	llvm::BasicBlock *pCondBB = llvm::BasicBlock::Create(m_Context, "loopcond", TheFunction);
+	llvm::BasicBlock *pAfterBB = llvm::BasicBlock::Create(m_Context, "afterloop", TheFunction);
+
+	// Генерируем тело цикла
+	m_pBuilder->CreateBr(pBodyBB);
+	m_pBuilder->SetInsertPoint(pBodyBB);
+	llvm::Value *pBody = GenStatement(pEl->_st);
+	m_pBuilder->CreateBr(pCondBB);
+
+	// Проверяем условие выхода
+	m_pBuilder->SetInsertPoint(pCondBB);
+	Var VarBool(Var::BOOLEAN);
+	llvm::Value *pCond = ExpressionCaster(pEl->_condition, &VarBool);
+
+	m_pBuilder->CreateCondBr(pCond, pAfterBB, pBodyBB);
+
+	// Выход из цикла
+	m_pBuilder->SetInsertPoint(pAfterBB);
+
+	return nullptr;
+}
+
 llvm::Value * CodeGenerator::GenAssignStatement(AssignStatement *pEl) {
 	Var *pVar = m_pCurScope->Get<Var>(pEl->_var);
+
+	if (pVar == nullptr)
+		throw std::exception((std::string("unknown variable '") + pEl->_var + "'").c_str());
+	
+	bool ref = pVar->isRef;
+	pVar->isRef = false;
 
 	llvm::Value *pAssignValue = ExpressionCaster(pEl->_expr, pVar);
 
 	llvm::Value *pVarValue = m_ValueMap[pVar];
 
+	if (ref)
+		pVarValue = m_pBuilder->CreateLoad(pVarValue);
+
 	m_pBuilder->CreateStore(pAssignValue, pVarValue);
 
+	pVar->isRef = ref;
 	return nullptr;
 }
 
@@ -345,7 +416,6 @@ llvm::Function * CodeGenerator::GenFunctionHeader(Function *pFunc) {
 
 	for (unsigned i = 0; i < NumOfParams; ++i)
 		pParamTypes[i] = GetType(pFunc->_params->_params[i].second);
-
 	llvm::FunctionType *FuncType = llvm::FunctionType::get(pReturnType, pParamTypes, false);
 
 	llvm::Function *pFunction = llvm::Function::Create(FuncType, llvm::Function::ExternalLinkage, pFunc->GetID(), m_pMainModule);
@@ -404,24 +474,33 @@ llvm::Value * CodeGenerator::GenFunctionBody(Function *pFunc) {
 
 	llvm::Value *pBody = GenStmntSeq(pFunc->seq);
 
-	m_pBuilder->CreateRet(m_pBuilder->CreateLoad(pRetVal));
-	llvm::verifyFunction(*pFunction);
+	if (pRetVal != nullptr)
+		m_pBuilder->CreateRet(m_pBuilder->CreateLoad(pRetVal));
+	else
+		m_pBuilder->CreateRetVoid();
 
+	llvm::verifyFunction(*pFunction);
+	m_pOurFPM->run(*pFunction);
+	
+	//pFunction->dump();
 	return pFunction;
 }
 
 llvm::Value * CodeGenerator::GenFunction(Function *pFunc) {
-	// Обрабатываем вложенные функции
-	for (auto &i : pFunc->Funcs)
-		GenFunctionHeader(i.second);
 
-	GenFunctionHeader(pFunc);
+	m_ValueMap[pFunc] = GenFunctionHeader(pFunc);
+	
+	// Обрабатываем вложенные функции
+	for (auto &i : pFunc->Funcs) {
+		m_ValueMap[i.second] = GenFunctionHeader(i.second);
+	}
+
+	
 	llvm::Value *pRes = GenFunctionBody(pFunc);
 	
 	for(auto &i : pFunc->Funcs)
-		GenFunctionBody(i.second);
+		GenFunction(i.second);
 
-	//pFunction->dump();
 	return pRes;
 }
 
@@ -453,40 +532,62 @@ llvm::Value * CodeGenerator::GenStatement(Statement *pStmt) {
 		ForStatement *pFor = dynamic_cast<ForStatement *>(pStmt);
 		return GenForStatement(pFor);
 	}
+	case Statement::S_WHILE:
+	{
+		WhileStatement *pWhile = dynamic_cast<WhileStatement *>(pStmt);
+		return GenWhileStatement(pWhile);
+	}
+	case Statement::S_REPEAT:
+	{
+		RepeatStatement *pWhile = dynamic_cast<RepeatStatement *>(pStmt);
+		return GenRepeatStatement(pWhile);
+	}
 	case Statement::S_EMPTY:
 		return nullptr;
-	case Statement::S_WHILE:
-	case Statement::S_REPEAT:
+	
+	
 	default:
 		throw std::exception();
 	};
 }
 
 llvm::Value * CodeGenerator::ExpressionCaster(Expression *pExp, const Var *pTo) {
+	llvm::Value *pExpValue;
+	if (pTo->isRef) {
+		ExprID *pE = dynamic_cast<ExprID *>(pExp);
+		if (pE == nullptr)
+			throw std::exception("cannot pass by reference");
+		pExpValue = GenExprID(pE, true);
+		return pExpValue;
+	}
 
-	llvm::Value *pExpValue = GenExpression(pExp);
-
-	auto pType = pExp->GetVar(m_pCurScope);
+	pExpValue = GenExpression(pExp);
+	const Var *pType = pExp->GetVar(m_pCurScope);
 
 	llvm::Instruction::CastOps CastOp;
 	std::string CastName = "cast";
 
 	if (pType->_type != pTo->_type) {
+		if (pTo->isRef)
+			throw std::exception("reference casting attempt");
+
 		llvm::Type *pDestT = GetType(pTo);
 
 		switch (pType->_type) {
 		case Var::REAL:
 			CastName += "real";
-			if (pTo->_type != Var::BOOLEAN)
-				CastOp = llvm::Instruction::CastOps::FPToSI;
+			if (pTo->_type == Var::BOOLEAN)
+				return m_pBuilder->CreateFCmpONE(pExpValue, llvm::ConstantFP::getNullValue(pExpValue->getType()));
 			else
-				CastOp = llvm::Instruction::CastOps::FPToUI;
+				CastOp = llvm::Instruction::CastOps::FPToSI;
 			break;
 		case Var::INTEGER:
 		case Var::CHAR:
 			CastName += "int";
 			if (pTo->_type == Var::REAL)
 				CastOp = llvm::Instruction::CastOps::SIToFP;
+			else if (pTo->_type == Var::BOOLEAN)
+				return m_pBuilder->CreateICmpNE(pExpValue, llvm::ConstantInt::getNullValue(pExpValue->getType()));
 			else
 				return m_pBuilder->CreateIntCast(pExpValue, pDestT, true, CastName);
 			break;
@@ -508,20 +609,29 @@ llvm::Value * CodeGenerator::ExpressionCaster(Expression *pExp, const Var *pTo) 
 }
 
 llvm::Type * CodeGenerator::GetType(const Var *pV) {
+	llvm::Type *pT;
 	switch (pV->_type) {
 	case Var::BOOLEAN:
-		return llvm::IntegerType::get(m_Context, 1);
+		pT =  llvm::IntegerType::get(m_Context, 1);
+		break;
 	case Var::CHAR:
-		return llvm::IntegerType::get(m_Context, 8);
+		pT = llvm::IntegerType::get(m_Context, 8);
+		break;
 	case Var::INTEGER:
-		return llvm::IntegerType::get(m_Context, sizeof(int) * 8);
+		pT = llvm::IntegerType::get(m_Context, sizeof(int) * 8);
+		break;
 	case Var::REAL:
-		return llvm::Type::getDoubleTy(m_Context);
+		pT = llvm::Type::getDoubleTy(m_Context);
+		break;
 	case Var::VOID:
-		return llvm::Type::getVoidTy(m_Context);
+		pT = llvm::Type::getVoidTy(m_Context);
+		break;
 	}
 
-	return nullptr;
+	if (pV->isRef)
+		pT = llvm::PointerType::get(pT, 0);
+
+	return pT;
 }
 
 
@@ -534,9 +644,35 @@ CodeGenerator * CodeGenerator::getInstance() {
 	return m_pInst;
 }
 
-void CodeGenerator::Generate(Parser *pP) {
+bool CodeGenerator::Generate(Parser *pP) {
 	m_pMainModule = new llvm::Module(pP->_ast->_ID, m_Context);
-	GenRoot(pP->_ast);
+
+	// Инициализация оптимизатора
+	m_pOurFPM = new llvm::FunctionPassManager(m_pMainModule);
+	m_pOurFPM->add(new llvm::DataLayoutPass(m_pMainModule));
+	m_pOurFPM->add(llvm::createBasicAliasAnalysisPass());
+	m_pOurFPM->add(llvm::createPromoteMemoryToRegisterPass());
+	m_pOurFPM->add(llvm::createInstructionCombiningPass());
+	m_pOurFPM->add(llvm::createReassociatePass());
+	m_pOurFPM->add(llvm::createGVNPass());
+	m_pOurFPM->add(llvm::createCFGSimplificationPass());
+
+	m_pOurFPM->doInitialization();
+
+	// Модуль выполнения программы
+	m_pExe = llvm::EngineBuilder(m_pMainModule).setErrorStr(&m_ErrorString).create();
+
+	bool Success = true;
+	try {
+		GenRoot(pP->_ast);
+	}
+	catch (std::exception &ex) {
+		cout << "Generation failed: " << ex.what() << endl;
+		Success = false;
+	}
+	delete m_pOurFPM;
+
+	return Success;
 }
 
 void CodeGenerator::Release() {
@@ -551,12 +687,10 @@ void CodeGenerator::Dump() {
 }
 
 int CodeGenerator::Execute() {
-	llvm::ExecutionEngine *pEe = llvm::EngineBuilder(m_pMainModule).setErrorStr(&m_ErrorString).create();
 	std::string name = m_pMainModule->getModuleIdentifier();
-	llvm::Function *pFunction = pEe->FindFunctionNamed(name.c_str());
+	llvm::Function *pFunction = m_pExe->FindFunctionNamed(name.c_str());
 	std::vector<std::string> v;
-	int res = pEe->runFunctionAsMain(pFunction, v, nullptr);
-	delete pEe;
+	int res = m_pExe->runFunctionAsMain(pFunction, v, nullptr);
 
 	return res;
 }

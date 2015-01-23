@@ -16,13 +16,14 @@ int main(int argc, char **argv) {
   }
 
   CodeGenerator *pGen = CodeGenerator::getInstance();
-  pGen->Generate(P);
 
-  pGen->Dump();
+  
 
-  int res = pGen->Execute();
-
-  std::cout << "Result: " << res << std::endl;
+  if (pGen->Generate(P)) {
+	  pGen->Dump();
+	  int res = pGen->Execute();
+	  std::cout << std::endl << "Result: " << res << std::endl;
+  }
 
   pGen->Release();
 

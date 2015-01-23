@@ -262,8 +262,6 @@ Function * Parser::ParseFunction(Function *par, bool isFunc)
 	string id = GetCurrentValue();
 	//Распознаем список параметров
 	ParamList* pList = ParseParamList();
-	for (auto &i : pList->_params)
-		par->scp.Add(i.first, i.second);
 
 	Var::TYPE rtype = Var::VOID;
 	if (isFunc)
@@ -277,7 +275,12 @@ Function * Parser::ParseFunction(Function *par, bool isFunc)
 	MustBe(T_SEMICOLON);
 	Function *pFunc = new Function(id, pList, rtype);
 	pFunc->scp.SetParScope(&par->scp);
+	// Добавляем параметры в область видимости
+	for (auto &i : pList->_params)
+		pFunc->scp.Add(i.first, i.second);
+
 	ParseDeclarations(pFunc);
+	// Добавляем возращаемое значение в область видимости
 	pFunc->scp.Add(pFunc->_ID, pFunc->_prtype);
 	pFunc->seq = ParseStmntSeq();
 	MustBe(T_SEMICOLON);
@@ -330,6 +333,7 @@ Statement * Parser::ParseStatement()
 	}
 	else if(Is(T_WHILE))
 	{
+		NextToken();
 		Expression *cond = ParseExpression();
 		MustBe(T_DO);
 		Statement *st = ParseStatement();
@@ -347,15 +351,18 @@ Statement * Parser::ParseStatement()
 		else
 		{
 			vector<Expression *> params;
-			if (Is(T_LBR))
-			{
-				do
-				{
-					NextToken();
+			MustBe(T_LBR);
+
+			if (!Is(T_RBR)) {
+				while (true) {
 					params.push_back(ParseExpression());
-				} while (Is(T_COMMA));
-				MustBe(T_RBR);
+					if (!Is(T_COMMA))
+						break;
+					NextToken();
+				}
 			}
+			MustBe(T_RBR);
+
 			return new ProcCallStatement(var, params);
 		}
 	}
@@ -500,8 +507,6 @@ ParamList * Parser::ParseParamList()
 				for (auto& i : ids)
 					pList->_params.push_back({ i, new Var(type, false, byRef)});
 			}
-			else
-				throw exception();
 		} while (Is(T_SEMICOLON));
 		MustBe(T_RBR);
 	}

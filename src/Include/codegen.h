@@ -28,6 +28,8 @@ private:
 private:
 	llvm::LLVMContext &m_Context;
 	llvm::Module *m_pMainModule;
+	llvm::FunctionPassManager *m_pOurFPM;
+	llvm::ExecutionEngine *m_pExe;
 	llvm::IRBuilder<> *m_pBuilder;
 	string m_ErrorString;
 
@@ -42,13 +44,13 @@ private:
 	llvm::Value * GenForStatement(ForStatement *pEl);
 	llvm::Value * GenProcCallStatement(ProcCallStatement *pEl);
 	llvm::Value * GenAssignStatement(AssignStatement *pEl);
-	llvm::Value * GenRepeatStatement(RepeatStatement *pEl);
 	llvm::Value * GenWhileStatement(WhileStatement *pEl);
+	llvm::Value * GenRepeatStatement(RepeatStatement *pEl);
 	llvm::Value * GenIfStatement(IfStatement *pEl);
 
 	llvm::Value * GenExpression(Expression *pEl);
 	llvm::Value * GenExprConst(ExprConst *pEl);
-	llvm::Value * GenExprID(ExprID *pEl);
+	llvm::Value * GenExprID(ExprID *pEl, bool getRef = false);
 	llvm::Value * GenBinaryOp(BinaryOp *pEl);
 	llvm::Value * GenFuncCallExpr(FuncCallExpr *pEl);
 	llvm::Value * GenCondition(Condition *pEl);
@@ -58,28 +60,37 @@ private:
 	llvm::Value * GenFunction(Function *pEl);
 
 	llvm::Type * GetType(const Var *pV);
+	llvm::Constant * GetConstValue(const Const *pC);
 
 	llvm::Value * ExpressionCaster(Expression *pExp, const Var *pTo);
 
 	llvm::Value *CreateEntryBlockAlloca(llvm::Function *TheFunction,
 		const std::string &VarName, Var *pVarType, bool IsGlobal = false) {
 
-		if (IsGlobal) {
-			return new llvm::GlobalVariable(*m_pMainModule, GetType(pVarType), false, llvm::GlobalVariable::LinkageTypes::CommonLinkage,
-				llvm::Constant::getNullValue(GetType(pVarType)), VarName);
+		if (IsGlobal || pVarType->isConst) {
+			llvm::Constant *pDefValue;
+			if (pVarType->isConst) {
+				Const *pC = dynamic_cast<Const *>(pVarType);
+				pDefValue = GetConstValue(pC);
+			}
+			else pDefValue = llvm::Constant::getNullValue(GetType(pVarType));
+			
+
+			return new llvm::GlobalVariable(*m_pMainModule, GetType(pVarType), pVarType->isConst,
+				llvm::GlobalVariable::LinkageTypes::CommonLinkage, pDefValue, VarName);
 		}
+
 
 		llvm::IRBuilder<> TmpB(&TheFunction->getEntryBlock(),
 			TheFunction->getEntryBlock().begin());
 
-		return TmpB.CreateAlloca(GetType(pVarType), 0,
-			VarName.c_str());
+		return TmpB.CreateAlloca(GetType(pVarType), 0, VarName.c_str());
 	}
 
 public:
 
 	static CodeGenerator * getInstance();
-	void Generate(Parser *pP);
+	bool Generate(Parser *pP);
 	void Release();
 	void Dump();
 	int Execute();
