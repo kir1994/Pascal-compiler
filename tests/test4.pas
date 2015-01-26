@@ -1,5 +1,16 @@
-program HelloWorld;
+program action;
+var 
+a,b: real;
+c: real;
+begin 
+a:=13.5;
+b:=6.1; 
 
-begin
-writeLn ('Hello World!')
+c:=a+b;
+c:=a-b;
+c:=a/b;
+c:=a*b; 
+
+action:=c
+
 end

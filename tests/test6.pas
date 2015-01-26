@@ -1,16 +1,7 @@
-program prog;
-const n = -10;
-  m = 1000000000;
-  b = true;
-  
+program crash;
 var
-    i: integer;
-    sum: Boolean;
-	kok: real;
-
+a: integer;
 begin
-	i := -10;
-	kok := 12.075;
-	sum := True;
-	prog:=sum+sum
+a:=(12 mod 7*4/2-350 div 15)+2;
+crash:=a
 end

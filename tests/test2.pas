@@ -1,11 +1,9 @@
-program prog;
-
-const fuck = 'v';
-such = 1;
-var 
-x:integer;
-y,z : Boolean
+program Infunct; 
+var
+a,b,c: integer; 
 begin
-x := y + such * fuck;
-z := 2
+a:=-2;
+b:=abs(a); 
+c:=sqr(b); 
+Infunct:=a
 end

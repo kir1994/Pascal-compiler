@@ -1,11 +1,8 @@
-program prog;
-const n=10;
+program crash;
 var
-    i: integer;
-    sum: integer;
+c: real;
+
 begin
-    sum:= 0;
-    for i:=1 to n do
-        sum:= sum+i;
-	prog:=sum
+c:=(7.478937-89.2456)/(883.5995+618.332)*76.2833;
+crash:=c
 end
