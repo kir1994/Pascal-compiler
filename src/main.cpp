@@ -6,7 +6,7 @@
 
 int main(int argc, char **argv) {
   std::ifstream input;
-  input.open("123.txt");
+  input.open("../tests/test13.pas");
 
   Parser *P = new Parser(input);
   P->Parse();

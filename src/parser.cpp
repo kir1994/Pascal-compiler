@@ -467,9 +467,9 @@ Expression * Parser::ParseFactor()
 	}
 	else if (Is(T_LBR))
 	{
+		NextToken();
 		Expression *ex = ParseExpression();
 		MustBe(T_RBR);
-		NextToken();
 		return ex;
 	}
 	throw exception();
