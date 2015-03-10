@@ -6,8 +6,9 @@
 
 int main(int argc, char **argv) {
   std::ifstream input;
-  input.open("../tests/test13.pas");
-
+  //input.open("../tests/test13.pas");
+  if(argc == 2)
+  	input.open(argv[1]);
   Parser *P = new Parser(input);
   P->Parse();
   if (!P->IsSuccess()) {
