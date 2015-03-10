@@ -9,6 +9,16 @@ int main(int argc, char **argv) {
   //input.open("../tests/test13.pas");
   if(argc == 2)
   	input.open(argv[1]);
+  else
+  {
+  	std::cout << "No file path specified\n";
+  	return -1;
+  }
+  if(!ifs)
+  {
+  	std::cout << "Incorrect file path\n";
+  	return -1;
+  }
   Parser *P = new Parser(input);
   P->Parse();
   if (!P->IsSuccess()) {
